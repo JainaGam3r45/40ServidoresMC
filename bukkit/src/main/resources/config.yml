@@ -14,5 +14,13 @@ cache:
     enabled: true
     serverStatsTtlSeconds: 60
     voteCheckNegativeTtlSeconds: 5
+autoReward:
+    enabled: true
+    recheckDelaysSeconds:
+    - 10
+    - 30
+    - 60
+    maxAttempts: 3
+    debug: false
 tag: "&8[&b40ServidoresMC&8]"
-configVer: 3
+configVer: 4

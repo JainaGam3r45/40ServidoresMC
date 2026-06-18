@@ -15,10 +15,12 @@ import org.spongepowered.api.config.ConfigDir;
 import org.spongepowered.api.event.Listener;
 import org.spongepowered.api.event.game.state.GameLoadCompleteEvent;
 import org.spongepowered.api.event.game.state.GameStartedServerEvent;
+import org.spongepowered.api.event.game.state.GameStoppedServerEvent;
 import org.spongepowered.api.plugin.Plugin;
 import org.spongepowered.api.text.Text;
 import org.spongepowered.api.text.serializer.TextSerializers;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -31,7 +33,7 @@ import java.util.List;
 @Plugin(id = "cservidoresmc", name = "40ServidoresMC", version = SpongePlugin.PLUGIN_VERSION)
 public class SpongePlugin implements CSPlugin {
 
-    public static final String PLUGIN_VERSION = "3.0.1";
+    public static final String PLUGIN_VERSION = "3.0.2";
     @Inject private Logger logger;
     @Inject private Game game;
 
@@ -40,6 +42,7 @@ public class SpongePlugin implements CSPlugin {
 
     private ApiClient apiClient;
     private Updater updater;
+    private RewardService rewardService;
     private CSConfiguration csConfiguration;
 
     @Inject
@@ -64,10 +67,16 @@ public class SpongePlugin implements CSPlugin {
     @Listener
     public void onServerStart(GameStartedServerEvent event) {
         apiClient = new ApiClient(this, new Gson());
+        rewardService = new RewardService(this);
         updater = new Updater(this, getPluginVersion(), this.game.getPlatform().getMinecraftVersion().getName());
         updater.checkearVersion(new CSConsoleSender(this));
 
         checkDefaultKey();
+    }
+
+    @Listener
+    public void onServerStop(GameStoppedServerEvent event) {
+        shutdownRewardService();
     }
 
     private Path resolveConfig() {
@@ -115,6 +124,16 @@ public class SpongePlugin implements CSPlugin {
     @Override
     public ApiClient getApiClient() {
         return apiClient;
+    }
+
+    @Override
+    public RewardService getRewardService() {
+        return rewardService;
+    }
+
+    @Override
+    public File getPluginDataFolder() {
+        return configDirectory.toFile();
     }
 
     @Override

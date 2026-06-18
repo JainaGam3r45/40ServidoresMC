@@ -2,8 +2,11 @@ package com.cadiducho.cservidoresmc.api;
 
 import com.cadiducho.cservidoresmc.ApiClient;
 import com.cadiducho.cservidoresmc.PluginMetrics;
+import com.cadiducho.cservidoresmc.RewardService;
 import com.cadiducho.cservidoresmc.Updater;
 import com.cadiducho.cservidoresmc.config.CSConfiguration;
+
+import java.io.File;
 
 public interface CSPlugin {
 
@@ -36,7 +39,7 @@ public interface CSPlugin {
      * @return la versión de la configuración
      */
     default int configVersion() {
-        return 3;
+        return 4;
     }
 
     /**
@@ -59,6 +62,25 @@ public interface CSPlugin {
      * @return API client
      */
     ApiClient getApiClient();
+
+    /**
+     * Servicio encargado de entregar premios por votos
+     * @return servicio de premios
+     */
+    RewardService getRewardService();
+
+    /**
+     * Directorio de datos del plugin
+     * @return carpeta de datos
+     */
+    File getPluginDataFolder();
+
+    default void shutdownRewardService() {
+        RewardService rewardService = getRewardService();
+        if (rewardService != null) {
+            rewardService.shutdown();
+        }
+    }
 
     /**
      * Instancia del actualizador

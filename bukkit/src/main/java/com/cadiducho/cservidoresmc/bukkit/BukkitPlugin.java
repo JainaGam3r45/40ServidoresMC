@@ -2,6 +2,7 @@ package com.cadiducho.cservidoresmc.bukkit;
 
 import com.cadiducho.cservidoresmc.ApiClient;
 import com.cadiducho.cservidoresmc.PluginMetrics;
+import com.cadiducho.cservidoresmc.RewardService;
 import com.cadiducho.cservidoresmc.Updater;
 import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.api.CSConsoleSender;
@@ -29,6 +30,7 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
 
     @Getter private ApiClient apiClient;
     @Getter private Updater updater;
+    @Getter private RewardService rewardService;
     @Getter private final PluginMetrics pluginMetrics = new PluginMetrics();
     
     private static BukkitPlugin instance;
@@ -46,6 +48,7 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
         csConfiguration = new BukkitConfigurationAdapter(instance, new File(getDataFolder() + File.separator + "config.yml"));
 
         apiClient = new ApiClient(instance, new Gson());
+        rewardService = new RewardService(instance);
 
         /*
          * Comandos y eventos
@@ -66,6 +69,11 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
         log("Plugin 40ServidoresMC v" + getPluginVersion() + " cargado completamente");
 
         checkDefaultKey();
+    }
+
+    @Override
+    public void onDisable() {
+        shutdownRewardService();
     }
 
     @Override
@@ -107,6 +115,11 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
     @Override
     public CSConfiguration getCSConfiguration() {
         return this.csConfiguration;
+    }
+
+    @Override
+    public File getPluginDataFolder() {
+        return getDataFolder();
     }
 
     @Override

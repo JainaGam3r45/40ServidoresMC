@@ -12,13 +12,16 @@ import org.spongepowered.api.Game;
 import org.spongepowered.api.Sponge;
 import org.spongepowered.api.event.Listener;
 import org.spongepowered.api.event.game.state.GameStartedServerEvent;
+import org.spongepowered.api.event.game.state.GameStoppedServerEvent;
 import org.spongepowered.api.plugin.Plugin;
 import org.spongepowered.api.text.Text;
+
+import java.io.File;
 
 @Plugin(id = "cservidoresmc", name = "40ServidoresMC", version = SpongePlugin.PLUGIN_VERSION)
 public class SpongePlugin implements CSPlugin {
 
-    public static final String PLUGIN_VERSION = "3.0.1";
+    public static final String PLUGIN_VERSION = "3.0.2";
     @Inject private Logger logger;
     @Inject private Game game;
 
@@ -27,6 +30,7 @@ public class SpongePlugin implements CSPlugin {
 
     private ApiClient apiClient;
     private Updater updater;
+    private RewardService rewardService;
     private CSConfiguration csConfiguration;
     private CSCommandManager csCommandManager;
 
@@ -42,8 +46,14 @@ public class SpongePlugin implements CSPlugin {
         //csConfiguration.load(; // FixMe: Confdig
 
         apiClient = new ApiClient(this, new Gson());
+        rewardService = new RewardService(this);
         updater = new Updater(this, getPluginVersion(), this.game.getPlatform().getMinecraftVersion().getName());
         updater.checkearVersion(new CSConsoleSender(this));
+    }
+
+    @Listener
+    public void onServerStop(GameStoppedServerEvent event) {
+        shutdownRewardService();
     }
 
     @Override
@@ -69,6 +79,16 @@ public class SpongePlugin implements CSPlugin {
     @Override
     public ApiClient getApiClient() {
         return apiClient;
+    }
+
+    @Override
+    public RewardService getRewardService() {
+        return rewardService;
+    }
+
+    @Override
+    public File getPluginDataFolder() {
+        return new File("config/cservidoresmc");
     }
 
     @Override
