@@ -43,7 +43,7 @@ public interface CSPlugin {
      * @return la versión de la configuración
      */
     default int configVersion() {
-        return 6;
+        return 7;
     }
 
     /**

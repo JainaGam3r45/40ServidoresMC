@@ -19,6 +19,28 @@ cache:
     enabled: true
     serverStatsTtlSeconds: 60
     voteCheckNegativeTtlSeconds: 5
+placeholderapi:
+    enabled: true
+    fallbacks:
+        notAvailable: "N/A"
+        zero: "0"
+        false: "false"
+    # Placeholders disponibles:
+    # %40servidoresmc_server_rank% - Puesto del servidor desde la caché de estadísticas.
+    # %40servidoresmc_server_votes% - Votos totales si la API los devuelve; si no, usa fallback.
+    # %40servidoresmc_votes_today% - Votos recibidos hoy desde la caché.
+    # %40servidoresmc_votes_month% - Votos mensuales si la API los devuelve; si no, usa fallback.
+    # %40servidoresmc_rewarded_today% - Votos premiados hoy desde la caché.
+    # %40servidoresmc_player_last_vote% - Fecha y hora del último voto local registrado.
+    # %40servidoresmc_player_last_vote_ago% - Tiempo transcurrido desde el último voto local.
+    # %40servidoresmc_player_can_vote% - true si el cooldown local de 24 horas ya terminó.
+    # %40servidoresmc_player_next_vote_in% - Tiempo restante para poder votar según datos locales.
+    # %40servidoresmc_player_streak% - Racha actual guardada localmente.
+    # %40servidoresmc_player_best_streak% - Mejor racha guardada localmente.
+    # %40servidoresmc_player_next_streak_reward% - Próximo hito configurado en streakRewards.
+    # %40servidoresmc_player_pending_reward% - true si hay un recheck de autoReward pendiente.
+    # %40servidoresmc_api_status% - Estado de la última llamada API: ok, error o unknown.
+    # %40servidoresmc_cache_age% - Edad de la caché de estadísticas del servidor.
 autoReward:
     enabled: true
     recheckDelaysSeconds:
@@ -32,4 +54,4 @@ voteReminder:
     message: '&aYa puedes volver a votar en 40ServidoresMC. Usa &2/voto40&a para recibir tu premio.'
     checkIntervalSeconds: 300
 tag: "&8[&b40ServidoresMC&8]"
-configVer: 6
+configVer: 7
