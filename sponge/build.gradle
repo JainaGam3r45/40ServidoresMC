@@ -3,6 +3,13 @@ plugins {
     id "io.freefair.lombok" version "6.4.3"
 }
 
+repositories {
+    maven { url 'https://repo.spongepowered.org/repository/maven-public/' }
+}
+
 dependencies {
     implementation project(':common')
+    implementation 'com.google.code.gson:gson:2.9.0'
+    implementation 'org.spongepowered:spongeapi:7.4.0'
+    implementation 'org.bstats:bstats-sponge:2.2.1'
 }
