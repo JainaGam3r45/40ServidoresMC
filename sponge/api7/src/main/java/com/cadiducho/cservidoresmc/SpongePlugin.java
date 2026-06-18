@@ -31,11 +31,12 @@ import java.util.List;
 @Plugin(id = "cservidoresmc", name = "40ServidoresMC", version = SpongePlugin.PLUGIN_VERSION)
 public class SpongePlugin implements CSPlugin {
 
-    public static final String PLUGIN_VERSION = "3.0";
+    public static final String PLUGIN_VERSION = "3.0.1";
     @Inject private Logger logger;
     @Inject private Game game;
 
     private final Metrics metrics;
+    private final PluginMetrics pluginMetrics = new PluginMetrics();
 
     private ApiClient apiClient;
     private Updater updater;
@@ -119,6 +120,11 @@ public class SpongePlugin implements CSPlugin {
     @Override
     public Updater getUpdater() {
         return updater;
+    }
+
+    @Override
+    public PluginMetrics getPluginMetrics() {
+        return pluginMetrics;
     }
 
     @Override

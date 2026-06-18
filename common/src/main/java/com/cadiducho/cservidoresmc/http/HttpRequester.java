@@ -43,14 +43,14 @@ public class HttpRequester {
                 }
 
                 lastFailure = failure;
-                logger.debug(requestName + " recibió HTTP " + statusCode + "; reintento " + attempt + " de " + config.getRetries() + ".");
+                logger.retry(requestName + " recibió HTTP " + statusCode + "; reintento " + attempt + " de " + config.getRetries() + ".");
                 sleepBeforeRetry(config, attempt);
             } catch (SocketTimeoutException e) {
                 lastFailure = e;
                 if (attempt == maxAttempts) {
                     throw e;
                 }
-                logger.debug(requestName + " agotó el tiempo de espera; reintento " + attempt + " de " + config.getRetries() + ".");
+                logger.retry(requestName + " agotó el tiempo de espera; reintento " + attempt + " de " + config.getRetries() + ".");
                 sleepBeforeRetry(config, attempt);
             } catch (InterruptedIOException e) {
                 Thread.currentThread().interrupt();
@@ -60,7 +60,7 @@ public class HttpRequester {
                 if (e instanceof HttpException || attempt == maxAttempts) {
                     throw e;
                 }
-                logger.debug(requestName + " falló por I/O transitorio; reintento " + attempt + " de " + config.getRetries() + ".");
+                logger.retry(requestName + " falló por I/O transitorio; reintento " + attempt + " de " + config.getRetries() + ".");
                 sleepBeforeRetry(config, attempt);
             } finally {
                 if (connection != null) {

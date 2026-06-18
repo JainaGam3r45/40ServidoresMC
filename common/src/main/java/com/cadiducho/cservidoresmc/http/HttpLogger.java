@@ -5,4 +5,8 @@ public interface HttpLogger {
     void debug(String text);
 
     void error(String text);
+
+    default void retry(String text) {
+        debug(text);
+    }
 }

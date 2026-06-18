@@ -1,6 +1,7 @@
 package com.cadiducho.cservidoresmc.api;
 
 import com.cadiducho.cservidoresmc.ApiClient;
+import com.cadiducho.cservidoresmc.PluginMetrics;
 import com.cadiducho.cservidoresmc.Updater;
 import com.cadiducho.cservidoresmc.config.CSConfiguration;
 
@@ -64,6 +65,12 @@ public interface CSPlugin {
      * @return updater
      */
     Updater getUpdater();
+
+    /**
+     * Métricas internas acumuladas desde el arranque del plugin
+     * @return métricas internas
+     */
+    PluginMetrics getPluginMetrics();
 
     /**
      * La versión del plugin en String, por ejemplo "3.0"

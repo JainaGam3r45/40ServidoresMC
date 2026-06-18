@@ -1,6 +1,7 @@
 package com.cadiducho.cservidoresmc.bukkit;
 
 import com.cadiducho.cservidoresmc.ApiClient;
+import com.cadiducho.cservidoresmc.PluginMetrics;
 import com.cadiducho.cservidoresmc.Updater;
 import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.api.CSConsoleSender;
@@ -28,6 +29,7 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
 
     @Getter private ApiClient apiClient;
     @Getter private Updater updater;
+    @Getter private final PluginMetrics pluginMetrics = new PluginMetrics();
     
     private static BukkitPlugin instance;
 

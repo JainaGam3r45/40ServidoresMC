@@ -11,6 +11,7 @@ import com.cadiducho.cservidoresmc.model.ServerStats;
 import com.cadiducho.cservidoresmc.model.VoteResponse;
 import com.cadiducho.cservidoresmc.model.VoteStatus;
 import com.google.gson.Gson;
+import com.google.gson.JsonSyntaxException;
 
 import java.io.IOException;
 import java.net.URLEncoder;
@@ -67,6 +68,7 @@ public class ApiClient {
 
         return CompletableFuture.supplyAsync(() -> {
             try {
+                plugin.getPluginMetrics().incrementVoteChecks();
                 VoteResponse voteResponse = fetchData("&nombre=" + urlEncode(player), "GET", VoteResponse.class);
                 cacheVoteResponse(cacheKey, voteResponse);
                 invalidateCachesForVoteResponse(cacheKey, voteResponse);
@@ -119,8 +121,17 @@ public class ApiClient {
      */
     private <T> T fetchData(String params, String method, Class<T> type) throws IOException {
         URL url = new URL(apiUrl + urlEncode(apiKey()) + params);
-        String body = httpRequester.request(url, method, "API 40ServidoresMC " + method, httpConfig(), httpLogger());
-        return gson.fromJson(body, type);
+        String requestName = "API 40ServidoresMC " + apiOperation(params) + " " + method;
+        plugin.getPluginMetrics().incrementApiRequests();
+        try {
+            plugin.debugLog(requestName + " iniciado.");
+            String body = httpRequester.request(url, method, requestName, httpConfig(), httpLogger());
+            return gson.fromJson(body, type);
+        } catch (IOException | JsonSyntaxException e) {
+            plugin.getPluginMetrics().incrementApiFailures();
+            plugin.debugLog(requestName + " falló: " + e.getMessage());
+            throw e;
+        }
     }
 
     private HttpConfig httpConfig() {
@@ -138,7 +149,23 @@ public class ApiClient {
             public void error(String text) {
                 plugin.logError(text);
             }
+
+            @Override
+            public void retry(String text) {
+                plugin.getPluginMetrics().incrementRetries();
+                plugin.debugLog(text);
+            }
         };
+    }
+
+    private String apiOperation(String params) {
+        if (params != null && params.contains("estadisticas=1")) {
+            return "estadísticas";
+        }
+        if (params != null && params.contains("nombre=")) {
+            return "voto";
+        }
+        return "petición";
     }
 
     private String urlEncode(String text) throws IOException {

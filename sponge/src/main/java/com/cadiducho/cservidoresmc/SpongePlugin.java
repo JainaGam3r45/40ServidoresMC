@@ -1,9 +1,9 @@
 package com.cadiducho.cservidoresmc;
 
-import com.cadiducho.cservidoresmc.api.CSConfiguration;
 import com.cadiducho.cservidoresmc.api.CSConsoleSender;
 import com.cadiducho.cservidoresmc.api.CSPlugin;
 import com.cadiducho.cservidoresmc.cmd.CSCommandManager;
+import com.cadiducho.cservidoresmc.config.CSConfiguration;
 import com.google.gson.Gson;
 import com.google.inject.Inject;
 import org.bstats.sponge.Metrics;
@@ -18,11 +18,12 @@ import org.spongepowered.api.text.Text;
 @Plugin(id = "cservidoresmc", name = "40ServidoresMC", version = SpongePlugin.PLUGIN_VERSION)
 public class SpongePlugin implements CSPlugin {
 
-    public static final String PLUGIN_VERSION = "3.0";
+    public static final String PLUGIN_VERSION = "3.0.1";
     @Inject private Logger logger;
     @Inject private Game game;
 
     private final Metrics metrics;
+    private final PluginMetrics pluginMetrics = new PluginMetrics();
 
     private ApiClient apiClient;
     private Updater updater;
@@ -73,6 +74,11 @@ public class SpongePlugin implements CSPlugin {
     @Override
     public Updater getUpdater() {
         return updater;
+    }
+
+    @Override
+    public PluginMetrics getPluginMetrics() {
+        return pluginMetrics;
     }
 
     @Override

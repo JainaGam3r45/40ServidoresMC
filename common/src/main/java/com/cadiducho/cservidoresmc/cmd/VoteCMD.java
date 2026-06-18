@@ -52,6 +52,8 @@ public class VoteCMD extends CSCommand {
                             .map(cmds -> cmds.replace("{0}", sender.getName()))
                             .forEach(plugin::dispatchCommand);
 
+                    plugin.getPluginMetrics().incrementRewardsDelivered();
+
                     if (plugin.getCSConfiguration().getBoolean("broadcast.activado")) {
                         plugin.broadcastMessage(plugin.getCSConfiguration().getString("broadcast.mensajeBroadcast").replace("{0}", sender.getName()));
                     }
