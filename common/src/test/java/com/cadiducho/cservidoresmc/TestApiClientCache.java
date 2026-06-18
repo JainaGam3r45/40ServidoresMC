@@ -13,6 +13,7 @@ import com.google.gson.Gson;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.io.File;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -231,6 +232,16 @@ public class TestApiClientCache {
         @Override
         public ApiClient getApiClient() {
             return null;
+        }
+
+        @Override
+        public RewardService getRewardService() {
+            return null;
+        }
+
+        @Override
+        public File getPluginDataFolder() {
+            return new File(".");
         }
 
         @Override
