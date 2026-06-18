@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestConfigMigrator {
@@ -52,7 +53,9 @@ public class TestConfigMigrator {
         assertTrue(migrated.contains("placeholderapi:"));
         assertTrue(migrated.contains("autoReward:"));
         assertTrue(migrated.contains("voteReminder:"));
+        assertTrue(migrated.contains("alreadyRewardedMessage:"));
         assertTrue(migrated.contains("configVer: 7"));
+        assertFalse(migrated.contains("\n\n\n"));
         assertTrue(plugin.logs.get(0).contains("config.yml actualizado"));
         assertEquals(1, backupCount());
     }
@@ -75,6 +78,7 @@ public class TestConfigMigrator {
                 "\n" +
                 "        zero: \"0\""));
         assertTrue(migrated.contains("        false: \"false\""));
+        assertFalse(migrated.contains("\n\n\n"));
     }
 
     @Test

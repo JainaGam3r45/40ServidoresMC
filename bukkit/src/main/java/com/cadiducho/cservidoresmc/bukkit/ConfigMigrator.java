@@ -78,18 +78,19 @@ public class ConfigMigrator {
         YamlDocument templateDocument = YamlDocument.parse(template);
         YamlDocument userDocument = YamlDocument.parse(userConfig);
         List<KeyBlock> missingBlocks = collectMissingBlocks(templateDocument, userDocument);
-        if (missingBlocks.isEmpty()) {
-            return;
-        }
-
-        String migrated = patchConfig(userConfig, templateDocument, userDocument, missingBlocks);
+        String migrated = missingBlocks.isEmpty() ? userConfig : patchConfig(userConfig, templateDocument, userDocument, missingBlocks);
+        migrated = normalizeBlankLines(migrated);
         if (migrated.equals(userConfig)) {
             return;
         }
 
         createBackup();
         Files.write(configFile.toPath(), migrated.getBytes(StandardCharsets.UTF_8));
-        plugin.log("config.yml actualizado. Claves añadidas: " + joinPaths(missingBlocks));
+        if (missingBlocks.isEmpty()) {
+            plugin.log("config.yml actualizado. Se normalizaron saltos de línea excesivos.");
+        } else {
+            plugin.log("config.yml actualizado. Claves añadidas: " + joinPaths(missingBlocks));
+        }
     }
 
     private List<KeyBlock> collectMissingBlocks(YamlDocument templateDocument, YamlDocument userDocument) {
@@ -205,6 +206,29 @@ public class ConfigMigrator {
             wrapped = wrapped + lineSeparator;
         }
         return wrapped;
+    }
+
+    private String normalizeBlankLines(String text) {
+        String lineSeparator = System.lineSeparator();
+        String normalized = text.replace("\r\n", "\n").replace('\r', '\n');
+        String[] lines = normalized.split("\n", -1);
+        StringBuilder builder = new StringBuilder();
+        boolean previousBlank = false;
+
+        for (String line : lines) {
+            boolean blank = line.trim().isEmpty();
+            if (blank && previousBlank) {
+                continue;
+            }
+            builder.append(line).append(lineSeparator);
+            previousBlank = blank;
+        }
+
+        while (builder.length() >= lineSeparator.length() * 2
+                && builder.substring(builder.length() - lineSeparator.length() * 2).equals(lineSeparator + lineSeparator)) {
+            builder.setLength(builder.length() - lineSeparator.length());
+        }
+        return builder.toString();
     }
 
     private String joinPaths(List<KeyBlock> blocks) {
