@@ -96,6 +96,11 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
      * Comprobar si el plugin PlaceholderAPI está activo, y si es así registrar la extensión
      */
     private void installPlaceholderAPI() {
+        if (!getCSConfiguration().getBoolean("placeholderapi.enabled", true)) {
+            debugLog("PlaceholderAPI desactivado desde la configuración.");
+            return;
+        }
+
         if (this.getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
             new PlaceholderHook(this).register();
         }
