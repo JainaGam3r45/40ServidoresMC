@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import net.md_5.bungee.api.ChatColor;
 import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 
 @RequiredArgsConstructor
 public class BukkitCommandSender implements CSCommandSender {
@@ -28,6 +29,14 @@ public class BukkitCommandSender implements CSCommandSender {
     @Override
     public String getName() {
         return commandSender.getName();
+    }
+
+    @Override
+    public String getUniqueId() {
+        if (commandSender instanceof Player) {
+            return ((Player) commandSender).getUniqueId().toString();
+        }
+        return "";
     }
 
     @Override

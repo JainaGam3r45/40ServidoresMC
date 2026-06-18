@@ -5,6 +5,7 @@ import com.cadiducho.cservidoresmc.PluginMetrics;
 import com.cadiducho.cservidoresmc.RewardService;
 import com.cadiducho.cservidoresmc.Updater;
 import com.cadiducho.cservidoresmc.VoteReminderService;
+import com.cadiducho.cservidoresmc.VoteStreakService;
 import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.api.CSConsoleSender;
 import com.cadiducho.cservidoresmc.api.CSPlugin;
@@ -36,6 +37,7 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
     @Getter private Updater updater;
     @Getter private RewardService rewardService;
     @Getter private VoteReminderService voteReminderService;
+    @Getter private VoteStreakService voteStreakService;
     @Getter private final PluginMetrics pluginMetrics = new PluginMetrics();
     
     private static BukkitPlugin instance;
@@ -54,6 +56,7 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
 
         apiClient = new ApiClient(instance, new Gson());
         voteReminderService = new VoteReminderService(instance);
+        voteStreakService = new VoteStreakService(instance);
         rewardService = new RewardService(instance);
         voteReminderService.start();
 

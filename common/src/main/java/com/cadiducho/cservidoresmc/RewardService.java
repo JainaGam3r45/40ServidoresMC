@@ -94,11 +94,13 @@ public class RewardService {
         }
 
         recordVote(player);
+        recordStreak(sender);
         invalidateVoteCaches(player);
         sender.sendMessageWithTag(plugin.getCSConfiguration().getString("mensaje"));
 
         for (String command : plugin.getCSConfiguration().customCommandsList()) {
-            plugin.dispatchCommand(command.replace("{0}", player));
+            String parsedCommand = command.replace("{0}", player);
+            plugin.runSync(() -> plugin.dispatchCommand(parsedCommand));
         }
 
         plugin.getPluginMetrics().incrementRewardsDelivered();
@@ -197,6 +199,13 @@ public class RewardService {
         VoteReminderService voteReminderService = plugin.getVoteReminderService();
         if (voteReminderService != null) {
             voteReminderService.recordVote(player);
+        }
+    }
+
+    private void recordStreak(CSCommandSender sender) {
+        VoteStreakService voteStreakService = plugin.getVoteStreakService();
+        if (voteStreakService != null) {
+            voteStreakService.recordVote(sender);
         }
     }
 

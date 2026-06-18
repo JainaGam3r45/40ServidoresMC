@@ -63,6 +63,24 @@ public class BukkitConfigurationAdapter implements CSConfiguration {
     }
 
     @Override
+    public Map<String, List<String>> getStringListMap(String path, Map<String, List<String>> def) {
+        Map<String, List<String>> map = new HashMap<>();
+        ConfigurationSection section = this.configuration.getConfigurationSection(path);
+        if (section == null) {
+            return def;
+        }
+
+        for (String key : section.getKeys(false)) {
+            List<String> list = section.getStringList(key);
+            if (section.isSet(key)) {
+                map.put(key, list);
+            }
+        }
+
+        return map;
+    }
+
+    @Override
     public CSPlugin getPlugin() {
         return this.plugin;
     }

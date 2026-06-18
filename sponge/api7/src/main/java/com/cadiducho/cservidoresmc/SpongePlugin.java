@@ -44,6 +44,7 @@ public class SpongePlugin implements CSPlugin {
     private Updater updater;
     private RewardService rewardService;
     private VoteReminderService voteReminderService;
+    private VoteStreakService voteStreakService;
     private CSConfiguration csConfiguration;
 
     @Inject
@@ -69,6 +70,7 @@ public class SpongePlugin implements CSPlugin {
     public void onServerStart(GameStartedServerEvent event) {
         apiClient = new ApiClient(this, new Gson());
         voteReminderService = new VoteReminderService(this);
+        voteStreakService = new VoteStreakService(this);
         rewardService = new RewardService(this);
         voteReminderService.start();
         updater = new Updater(this, getPluginVersion(), this.game.getPlatform().getMinecraftVersion().getName());
@@ -138,6 +140,11 @@ public class SpongePlugin implements CSPlugin {
     @Override
     public VoteReminderService getVoteReminderService() {
         return voteReminderService;
+    }
+
+    @Override
+    public VoteStreakService getVoteStreakService() {
+        return voteStreakService;
     }
 
     @Override

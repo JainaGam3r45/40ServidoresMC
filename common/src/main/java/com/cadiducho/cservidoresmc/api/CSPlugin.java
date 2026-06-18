@@ -5,6 +5,7 @@ import com.cadiducho.cservidoresmc.PluginMetrics;
 import com.cadiducho.cservidoresmc.RewardService;
 import com.cadiducho.cservidoresmc.Updater;
 import com.cadiducho.cservidoresmc.VoteReminderService;
+import com.cadiducho.cservidoresmc.VoteStreakService;
 import com.cadiducho.cservidoresmc.config.CSConfiguration;
 
 import java.io.File;
@@ -42,7 +43,7 @@ public interface CSPlugin {
      * @return la versión de la configuración
      */
     default int configVersion() {
-        return 5;
+        return 6;
     }
 
     /**
@@ -77,6 +78,14 @@ public interface CSPlugin {
      * @return servicio de recordatorios
      */
     default VoteReminderService getVoteReminderService() {
+        return null;
+    }
+
+    /**
+     * Servicio encargado de guardar y premiar rachas de votos
+     * @return servicio de rachas
+     */
+    default VoteStreakService getVoteStreakService() {
         return null;
     }
 

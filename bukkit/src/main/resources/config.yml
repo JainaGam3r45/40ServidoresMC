@@ -6,6 +6,11 @@ broadcast:
 mensaje: '&6Gracias por votarnos! Aqui tienes tu premio: '
 comandosCustom: 
 - money add {0} 10
+streakRewards:
+    3:
+        - give %player% diamond 1
+    7:
+        - give %player% emerald 5
 readTimeOut: 5000
 connectTimeOut: 5000
 httpRetries: 2
@@ -27,4 +32,4 @@ voteReminder:
     message: '&aYa puedes volver a votar en 40ServidoresMC. Usa &2/voto40&a para recibir tu premio.'
     checkIntervalSeconds: 300
 tag: "&8[&b40ServidoresMC&8]"
-configVer: 5
+configVer: 6

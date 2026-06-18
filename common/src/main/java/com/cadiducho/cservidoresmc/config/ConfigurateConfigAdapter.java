@@ -9,6 +9,7 @@ import ninja.leaping.configurate.loader.ConfigurationLoader;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -83,6 +84,23 @@ public abstract class ConfigurateConfigAdapter implements CSConfiguration {
 
         Map<String, Object> m = (Map<String, Object>) node.getValue(Collections.emptyMap());
         return m.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, v -> v.getValue().toString()));
+    }
+
+    @Override
+    public Map<String, List<String>> getStringListMap(String path, Map<String, List<String>> def) {
+        ConfigurationNode node = resolvePath(path);
+        if (node.isVirtual()) {
+            return def;
+        }
+
+        Map<String, List<String>> map = new HashMap<>();
+        for (Map.Entry<Object, ? extends ConfigurationNode> entry : node.getChildrenMap().entrySet()) {
+            ConfigurationNode child = entry.getValue();
+            if (child.isList()) {
+                map.put(entry.getKey().toString(), child.getList(Object::toString));
+            }
+        }
+        return map;
     }
 
     @Override

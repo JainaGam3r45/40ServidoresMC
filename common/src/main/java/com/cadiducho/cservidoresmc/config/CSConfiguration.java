@@ -119,6 +119,25 @@ public interface CSConfiguration {
     Map<String, String> getStringMap(String path, Map<String, String> def);
 
     /**
+     * Devuelve un mapa de listas de strings de la configuración
+     * @param path La clave
+     * @return El valor de la clave en la configuración
+     */
+    default Map<String, List<String>> getStringListMap(String path) {
+        return getStringListMap(path, new HashMap<>());
+    }
+
+    /**
+     * Devuelve un mapa de listas de strings de la configuración
+     * @param path La clave
+     * @param def El valor por defecto
+     * @return El valor de la clave en la configuración
+     */
+    default Map<String, List<String>> getStringListMap(String path, Map<String, List<String>> def) {
+        return def;
+    }
+
+    /**
      * Devuelve el plugin de CServidoresMC
      * @return El plugin
      */

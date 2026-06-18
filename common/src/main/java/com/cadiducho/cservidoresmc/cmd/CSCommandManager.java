@@ -20,6 +20,7 @@ public class CSCommandManager {
         registerCommand(new ReloadCMD());
         registerCommand(new MetricsCMD());
         registerCommand(new StatsCMD());
+        registerCommand(new StreakCMD());
         registerCommand(new TestCMD());
         registerCommand(new UpdateCMD());
         registerCommand(new VoteCMD());

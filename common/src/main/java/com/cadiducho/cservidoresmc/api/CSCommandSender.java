@@ -38,6 +38,14 @@ public interface CSCommandSender {
     String getName();
 
     /**
+     * Get the UUID of the sender when the platform exposes it.
+     * @return The UUID, or an empty string when it is not available
+     */
+    default String getUniqueId() {
+        return "";
+    }
+
+    /**
      * Check if the sender is a console
      * @return true if the sender is a console
      */

@@ -21,5 +21,8 @@ commands:
     metrics40:
         description: Metricas internas del plugin
         aliases: []
+    streak40:
+        description: Administra rachas de voto
+        aliases: []
     test40:
         description: Testea el premio que das a tus jugadores

@@ -4,6 +4,7 @@ import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.api.CSPlugin;
 import lombok.RequiredArgsConstructor;
 import org.spongepowered.api.command.CommandSource;
+import org.spongepowered.api.entity.living.player.Player;
 import org.spongepowered.api.text.Text;
 import org.spongepowered.api.text.action.TextActions;
 import org.spongepowered.api.text.format.TextColors;
@@ -41,6 +42,14 @@ public class SpongeCommandSender implements CSCommandSender {
     @Override
     public String getName() {
         return commandSource.getName();
+    }
+
+    @Override
+    public String getUniqueId() {
+        if (commandSource instanceof Player) {
+            return ((Player) commandSource).getUniqueId().toString();
+        }
+        return "";
     }
 
     @Override
