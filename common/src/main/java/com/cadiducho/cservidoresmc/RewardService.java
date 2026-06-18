@@ -62,6 +62,7 @@ public class RewardService {
                 break;
             case ALREADY_VOTED:
                 markRewarded(player);
+                recordVote(player);
                 invalidateVoteCaches(player);
                 sender.sendMessageWithTag("&aGracias por votar, pero ya has obtenido tu premio!");
                 break;
@@ -84,6 +85,7 @@ public class RewardService {
 
         if (markResult == RewardStore.MarkResult.DUPLICATE) {
             debug("Premio omitido para " + player + ": ya estaba marcado como entregado.");
+            recordVote(player);
             invalidateVoteCaches(player);
             if (notifyDuplicate) {
                 sender.sendMessageWithTag("&aGracias por votar, pero ya has obtenido tu premio!");
@@ -91,6 +93,7 @@ public class RewardService {
             return false;
         }
 
+        recordVote(player);
         invalidateVoteCaches(player);
         sender.sendMessageWithTag(plugin.getCSConfiguration().getString("mensaje"));
 
@@ -166,6 +169,7 @@ public class RewardService {
 
         if (status == VoteStatus.ALREADY_VOTED) {
             markRewarded(player);
+            recordVote(player);
             invalidateVoteCaches(player);
             finishRechecks(pendingKey);
             return;
@@ -187,6 +191,13 @@ public class RewardService {
 
     private void markRewarded(String player) {
         rewardStore.markRewarded(player, currentDate.get());
+    }
+
+    private void recordVote(String player) {
+        VoteReminderService voteReminderService = plugin.getVoteReminderService();
+        if (voteReminderService != null) {
+            voteReminderService.recordVote(player);
+        }
     }
 
     private void invalidateVoteCaches(String player) {

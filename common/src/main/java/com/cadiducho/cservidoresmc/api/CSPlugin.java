@@ -4,9 +4,12 @@ import com.cadiducho.cservidoresmc.ApiClient;
 import com.cadiducho.cservidoresmc.PluginMetrics;
 import com.cadiducho.cservidoresmc.RewardService;
 import com.cadiducho.cservidoresmc.Updater;
+import com.cadiducho.cservidoresmc.VoteReminderService;
 import com.cadiducho.cservidoresmc.config.CSConfiguration;
 
 import java.io.File;
+import java.util.Collections;
+import java.util.List;
 
 public interface CSPlugin {
 
@@ -39,7 +42,7 @@ public interface CSPlugin {
      * @return la versión de la configuración
      */
     default int configVersion() {
-        return 4;
+        return 5;
     }
 
     /**
@@ -70,6 +73,14 @@ public interface CSPlugin {
     RewardService getRewardService();
 
     /**
+     * Servicio encargado de recordar a los jugadores cuándo pueden volver a votar
+     * @return servicio de recordatorios
+     */
+    default VoteReminderService getVoteReminderService() {
+        return null;
+    }
+
+    /**
      * Directorio de datos del plugin
      * @return carpeta de datos
      */
@@ -79,6 +90,13 @@ public interface CSPlugin {
         RewardService rewardService = getRewardService();
         if (rewardService != null) {
             rewardService.shutdown();
+        }
+    }
+
+    default void shutdownVoteReminderService() {
+        VoteReminderService voteReminderService = getVoteReminderService();
+        if (voteReminderService != null) {
+            voteReminderService.shutdown();
         }
     }
 
@@ -105,6 +123,22 @@ public interface CSPlugin {
      * @param command El comando deseado
      */
     void dispatchCommand(String command);
+
+    /**
+     * Obtener jugadores conectados como command senders genéricos
+     * @return jugadores conectados
+     */
+    default List<CSCommandSender> getOnlinePlayers() {
+        return Collections.emptyList();
+    }
+
+    /**
+     * Ejecutar una tarea en el hilo principal de la plataforma
+     * @param task tarea
+     */
+    default void runSync(Runnable task) {
+        task.run();
+    }
 
     /**
      * Enviar un mensaje a todos los usuarios

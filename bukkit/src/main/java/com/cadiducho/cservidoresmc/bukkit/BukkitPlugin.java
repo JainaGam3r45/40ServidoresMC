@@ -4,6 +4,7 @@ import com.cadiducho.cservidoresmc.ApiClient;
 import com.cadiducho.cservidoresmc.PluginMetrics;
 import com.cadiducho.cservidoresmc.RewardService;
 import com.cadiducho.cservidoresmc.Updater;
+import com.cadiducho.cservidoresmc.VoteReminderService;
 import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.api.CSConsoleSender;
 import com.cadiducho.cservidoresmc.api.CSPlugin;
@@ -16,10 +17,13 @@ import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.ConsoleCommandSender;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.logging.Level;
 
 /**
@@ -31,6 +35,7 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
     @Getter private ApiClient apiClient;
     @Getter private Updater updater;
     @Getter private RewardService rewardService;
+    @Getter private VoteReminderService voteReminderService;
     @Getter private final PluginMetrics pluginMetrics = new PluginMetrics();
     
     private static BukkitPlugin instance;
@@ -48,7 +53,9 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
         csConfiguration = new BukkitConfigurationAdapter(instance, new File(getDataFolder() + File.separator + "config.yml"));
 
         apiClient = new ApiClient(instance, new Gson());
+        voteReminderService = new VoteReminderService(instance);
         rewardService = new RewardService(instance);
+        voteReminderService.start();
 
         /*
          * Comandos y eventos
@@ -73,6 +80,7 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
 
     @Override
     public void onDisable() {
+        shutdownVoteReminderService();
         shutdownRewardService();
     }
 
@@ -140,6 +148,20 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
     @Override
     public void dispatchCommand(String command) {
         getServer().getScheduler().callSyncMethod(instance, () -> getServer().dispatchCommand(getServer().getConsoleSender(), command));
+    }
+
+    @Override
+    public List<CSCommandSender> getOnlinePlayers() {
+        List<CSCommandSender> players = new ArrayList<>();
+        for (Player player : getServer().getOnlinePlayers()) {
+            players.add(new BukkitCommandSender(player, this));
+        }
+        return players;
+    }
+
+    @Override
+    public void runSync(Runnable task) {
+        getServer().getScheduler().runTask(instance, task);
     }
 
     @Override

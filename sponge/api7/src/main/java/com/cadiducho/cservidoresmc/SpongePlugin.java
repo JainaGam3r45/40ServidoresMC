@@ -1,6 +1,7 @@
 package com.cadiducho.cservidoresmc;
 
 import com.cadiducho.cservidoresmc.api.CSConsoleSender;
+import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.api.CSPlugin;
 import com.cadiducho.cservidoresmc.cmd.*;
 import com.cadiducho.cservidoresmc.config.CSConfiguration;
@@ -12,6 +13,7 @@ import org.spongepowered.api.Game;
 import org.spongepowered.api.Sponge;
 import org.spongepowered.api.command.CommandManager;
 import org.spongepowered.api.config.ConfigDir;
+import org.spongepowered.api.entity.living.player.Player;
 import org.spongepowered.api.event.Listener;
 import org.spongepowered.api.event.game.state.GameLoadCompleteEvent;
 import org.spongepowered.api.event.game.state.GameStartedServerEvent;
@@ -26,8 +28,6 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
 @Plugin(id = "cservidoresmc", name = "40ServidoresMC", version = SpongePlugin.PLUGIN_VERSION)
@@ -43,6 +43,7 @@ public class SpongePlugin implements CSPlugin {
     private ApiClient apiClient;
     private Updater updater;
     private RewardService rewardService;
+    private VoteReminderService voteReminderService;
     private CSConfiguration csConfiguration;
 
     @Inject
@@ -67,7 +68,9 @@ public class SpongePlugin implements CSPlugin {
     @Listener
     public void onServerStart(GameStartedServerEvent event) {
         apiClient = new ApiClient(this, new Gson());
+        voteReminderService = new VoteReminderService(this);
         rewardService = new RewardService(this);
+        voteReminderService.start();
         updater = new Updater(this, getPluginVersion(), this.game.getPlatform().getMinecraftVersion().getName());
         updater.checkearVersion(new CSConsoleSender(this));
 
@@ -76,6 +79,7 @@ public class SpongePlugin implements CSPlugin {
 
     @Listener
     public void onServerStop(GameStoppedServerEvent event) {
+        shutdownVoteReminderService();
         shutdownRewardService();
     }
 
@@ -132,6 +136,11 @@ public class SpongePlugin implements CSPlugin {
     }
 
     @Override
+    public VoteReminderService getVoteReminderService() {
+        return voteReminderService;
+    }
+
+    @Override
     public File getPluginDataFolder() {
         return configDirectory.toFile();
     }
@@ -154,6 +163,20 @@ public class SpongePlugin implements CSPlugin {
     @Override
     public void dispatchCommand(String command) {
         Sponge.getCommandManager().process(Sponge.getServer().getConsole(), command);
+    }
+
+    @Override
+    public List<CSCommandSender> getOnlinePlayers() {
+        List<CSCommandSender> players = new ArrayList<>();
+        for (Player player : Sponge.getServer().getOnlinePlayers()) {
+            players.add(new SpongeCommandSender(player, this));
+        }
+        return players;
+    }
+
+    @Override
+    public void runSync(Runnable task) {
+        Sponge.getScheduler().createTaskBuilder().execute(task).submit(this);
     }
 
     @Override
