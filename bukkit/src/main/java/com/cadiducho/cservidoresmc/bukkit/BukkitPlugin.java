@@ -52,7 +52,9 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
         /*
          * Generar y cargar Config.yml
          */
-        csConfiguration = new BukkitConfigurationAdapter(instance, new File(getDataFolder() + File.separator + "config.yml"));
+        File configFile = new File(getDataFolder() + File.separator + "config.yml");
+        new ConfigMigrator(instance, configFile).migrate();
+        csConfiguration = new BukkitConfigurationAdapter(instance, configFile);
 
         apiClient = new ApiClient(instance, new Gson());
         voteReminderService = new VoteReminderService(instance);
