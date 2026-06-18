@@ -1,6 +1,9 @@
 .gradle
 .idea
+.vscode
 *.iml
+*.class
+bin/
 
 /build/
 /bukkit/build
