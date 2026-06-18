@@ -26,3 +26,25 @@ commands:
         aliases: []
     test40:
         description: Testea el premio que das a tus jugadores
+permissions:
+    40servidores.voto:
+        description: Permite validar el voto del jugador
+        default: true
+    40servidores.actualizar:
+        description: Permite comprobar actualizaciones del plugin
+        default: op
+    40servidores.recargar:
+        description: Permite recargar la configuración del plugin
+        default: op
+    40servidores.stats:
+        description: Permite consultar las estadísticas de voto
+        default: op
+    40servidores.metrics:
+        description: Permite consultar métricas internas del plugin
+        default: op
+    40servidores.streak:
+        description: Permite ver y resetear rachas de voto
+        default: op
+    40servidores.test:
+        description: Permite probar las recompensas configuradas
+        default: op
