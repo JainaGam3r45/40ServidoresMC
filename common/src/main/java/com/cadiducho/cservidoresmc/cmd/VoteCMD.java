@@ -44,6 +44,8 @@ public class VoteCMD extends CSCommand {
                     sender.sendNotVotedTodayLink("&6No has votado hoy! Puedes hacerlo en &a ", web);
                     break;
                 case SUCCESS:
+                    plugin.getApiClient().invalidateVoteCache(sender.getName());
+                    plugin.getApiClient().invalidateServerStatsCache();
                     sender.sendMessageWithTag(plugin.getCSConfiguration().getString("mensaje"));
 
                     plugin.getCSConfiguration().customCommandsList().stream()
@@ -55,6 +57,8 @@ public class VoteCMD extends CSCommand {
                     }
                     break;
                 case ALREADY_VOTED:
+                    plugin.getApiClient().invalidateVoteCache(sender.getName());
+                    plugin.getApiClient().invalidateServerStatsCache();
                     sender.sendMessageWithTag("&aGracias por votar, pero ya has obtenido tu premio!");
                     break;
                 case INVALID_kEY:

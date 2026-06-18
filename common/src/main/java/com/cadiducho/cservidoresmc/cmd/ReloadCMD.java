@@ -22,6 +22,7 @@ public class ReloadCMD extends CSCommand {
     @Override
     public CommandResult execute(CSPlugin plugin, CSCommandSender sender, String label, List<String> args) {
         plugin.getCSConfiguration().reload();
+        plugin.getApiClient().invalidateAllCache();
 
         sender.sendMessageWithTag("&aConfiguración recargada correctamente");
         sender.sendMessageWithTag("&aFuncionando la versión " + plugin.getPluginVersion());
