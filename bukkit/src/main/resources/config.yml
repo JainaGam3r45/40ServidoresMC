@@ -7,5 +7,8 @@ mensaje: '&6Gracias por votarnos! Aqui tienes tu premio: '
 comandosCustom: 
 - money add {0} 10
 readTimeOut: 5000
+connectTimeOut: 5000
+httpRetries: 2
+httpRetryBackoff: 250
 tag: "&8[&b40ServidoresMC&8]"
 configVer: 3
