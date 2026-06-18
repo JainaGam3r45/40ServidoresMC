@@ -1,6 +1,7 @@
 package com.cadiducho.cservidoresmc.bukkit;
 
 import com.cadiducho.cservidoresmc.ApiClient;
+import com.cadiducho.cservidoresmc.LegacyPlayerDataMigrator;
 import com.cadiducho.cservidoresmc.PluginMetrics;
 import com.cadiducho.cservidoresmc.RewardService;
 import com.cadiducho.cservidoresmc.Updater;
@@ -19,6 +20,7 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
@@ -55,6 +57,7 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
         File configFile = new File(getDataFolder() + File.separator + "config.yml");
         new ConfigMigrator(instance, configFile).migrate();
         csConfiguration = new BukkitConfigurationAdapter(instance, configFile);
+        new LegacyPlayerDataMigrator(instance, getDataFolder()).migrate();
 
         apiClient = new ApiClient(instance, new Gson());
         voteReminderService = new VoteReminderService(instance);
@@ -167,6 +170,19 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
             players.add(new BukkitCommandSender(player, this));
         }
         return players;
+    }
+
+    @Override
+    public String resolvePlayerUniqueId(String player) {
+        if (player == null || player.trim().isEmpty()) {
+            return "";
+        }
+        Player online = getServer().getPlayerExact(player);
+        if (online != null) {
+            return online.getUniqueId().toString();
+        }
+        OfflinePlayer offlinePlayer = getServer().getOfflinePlayer(player);
+        return offlinePlayer == null || offlinePlayer.getUniqueId() == null ? "" : offlinePlayer.getUniqueId().toString();
     }
 
     @Override

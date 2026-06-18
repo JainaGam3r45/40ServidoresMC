@@ -225,6 +225,11 @@ public class TestVoteReminderService {
         }
 
         @Override
+        public String resolvePlayerUniqueId(String player) {
+            return "cadiducho".equalsIgnoreCase(player) ? "0f50d3c1-2d53-47d8-9f5a-10153b5f9770" : "";
+        }
+
+        @Override
         public void runSync(Runnable task) {
             task.run();
         }
@@ -286,10 +291,12 @@ public class TestVoteReminderService {
     private static class TestSender implements CSCommandSender {
 
         private final String name;
+        private final String uuid;
         private final List<String> messages = new ArrayList<>();
 
         private TestSender(String name) {
             this.name = name;
+            this.uuid = "0f50d3c1-2d53-47d8-9f5a-10153b5f9770";
         }
 
         @Override
@@ -305,6 +312,11 @@ public class TestVoteReminderService {
         @Override
         public String getName() {
             return name;
+        }
+
+        @Override
+        public String getUniqueId() {
+            return uuid;
         }
 
         @Override

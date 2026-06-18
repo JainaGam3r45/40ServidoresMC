@@ -22,25 +22,33 @@ import java.util.function.Supplier;
 public class RewardService {
 
     private static final List<String> DEFAULT_RECHECK_DELAYS = Arrays.asList("10", "30", "60");
+    private static final String DEFAULT_ALREADY_REWARDED_MESSAGE = "&aYa has votado y recibido tu recompensa. Podrás volver a votar en &e%time%&a.";
 
     private final CSPlugin plugin;
-    private final RewardStore rewardStore;
+    private final PlayerVoteStore playerVoteStore;
     private final RewardScheduler scheduler;
     private final Supplier<String> currentDate;
+    private final Supplier<Long> clock;
     private final Set<String> pendingRechecks = new HashSet<>();
 
     public RewardService(CSPlugin plugin) {
         this(plugin,
-                new File(plugin.getPluginDataFolder(), "rewarded-votes.properties"),
+                plugin.getPluginDataFolder(),
                 new ScheduledRewardScheduler(),
-                () -> new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(new Date()));
+                () -> new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(new Date()),
+                System::currentTimeMillis);
     }
 
-    RewardService(CSPlugin plugin, File rewardFile, RewardScheduler scheduler, Supplier<String> currentDate) {
+    RewardService(CSPlugin plugin, File dataPath, RewardScheduler scheduler, Supplier<String> currentDate) {
+        this(plugin, dataFolder(dataPath), scheduler, currentDate, System::currentTimeMillis);
+    }
+
+    RewardService(CSPlugin plugin, File dataFolder, RewardScheduler scheduler, Supplier<String> currentDate, Supplier<Long> clock) {
         this.plugin = plugin;
-        this.rewardStore = new RewardStore(rewardFile, plugin);
+        this.playerVoteStore = new PlayerVoteStore(dataFolder, plugin);
         this.scheduler = scheduler;
         this.currentDate = currentDate;
+        this.clock = clock;
     }
 
     public void handleVoteResponse(String player, CSCommandSender sender, VoteResponse voteResponse) {
@@ -54,15 +62,18 @@ public class RewardService {
 
         switch (status) {
             case NOT_VOTED:
+                if (sendAlreadyRewardedIfActive(sender)) {
+                    return;
+                }
                 sender.sendNotVotedTodayLink("&6No has votado hoy! Puedes hacerlo en &a ", web);
                 scheduleAutoReward(player, sender);
                 break;
             case SUCCESS:
-                deliverReward(player, sender, true);
+                deliverReward(sender, true);
                 break;
             case ALREADY_VOTED:
-                markRewarded(player);
-                recordVote(player);
+                markRewarded(sender);
+                recordVote(sender);
                 invalidateVoteCaches(player);
                 sender.sendMessageWithTag("&aGracias por votar, pero ya has obtenido tu premio!");
                 break;
@@ -76,24 +87,28 @@ public class RewardService {
     }
 
     public boolean deliverReward(String player, CSCommandSender sender, boolean notifyDuplicate) {
+        return deliverReward(sender, notifyDuplicate);
+    }
+
+    public boolean deliverReward(CSCommandSender sender, boolean notifyDuplicate) {
+        String player = sender.getName();
         String date = currentDate.get();
-        RewardStore.MarkResult markResult = rewardStore.markRewarded(player, date);
-        if (markResult == RewardStore.MarkResult.FAILED) {
+        PlayerVoteStore.MarkResult markResult = playerVoteStore.markRewarded(sender, date, clock.get());
+        if (markResult == PlayerVoteStore.MarkResult.FAILED) {
             sender.sendMessageWithTag("&cNo se pudo registrar tu voto premiado. Avisa a un administrador.");
             return false;
         }
 
-        if (markResult == RewardStore.MarkResult.DUPLICATE) {
+        if (markResult == PlayerVoteStore.MarkResult.DUPLICATE) {
             debug("Premio omitido para " + player + ": ya estaba marcado como entregado.");
-            recordVote(player);
             invalidateVoteCaches(player);
             if (notifyDuplicate) {
-                sender.sendMessageWithTag("&aGracias por votar, pero ya has obtenido tu premio!");
+                sendAlreadyRewardedMessage(sender);
             }
             return false;
         }
 
-        recordVote(player);
+        recordVote(sender);
         recordStreak(sender);
         invalidateVoteCaches(player);
         sender.sendMessageWithTag(plugin.getCSConfiguration().getString("mensaje"));
@@ -115,8 +130,20 @@ public class RewardService {
 
     public boolean hasPendingReward(String player) {
         synchronized (pendingRechecks) {
-            return pendingRechecks.contains(rewardStore.rewardKey(player, currentDate.get()));
+            return pendingRechecks.contains(rewardKey(player, currentDate.get()));
         }
+    }
+
+    public boolean hasActiveReward(CSCommandSender sender) {
+        return playerVoteStore.hasRewardedOnDate(sender, currentDate.get()) && nextVoteInMillis(sender) > 0L;
+    }
+
+    public boolean sendAlreadyRewardedIfActive(CSCommandSender sender) {
+        if (!hasActiveReward(sender)) {
+            return false;
+        }
+        sendAlreadyRewardedMessage(sender);
+        return true;
     }
 
     public void shutdown() {
@@ -134,7 +161,7 @@ public class RewardService {
             return;
         }
 
-        String pendingKey = rewardStore.rewardKey(player, currentDate.get());
+        String pendingKey = rewardKey(player, currentDate.get());
         synchronized (pendingRechecks) {
             if (!pendingRechecks.add(pendingKey)) {
                 debug("Ya hay rechecks pendientes para " + player + ".");
@@ -170,14 +197,14 @@ public class RewardService {
         debug("Recheck " + attempt + " para " + player + " devolvió " + status + ".");
 
         if (status == VoteStatus.SUCCESS) {
-            deliverReward(player, sender, false);
+            deliverReward(sender, false);
             finishRechecks(pendingKey);
             return;
         }
 
         if (status == VoteStatus.ALREADY_VOTED) {
-            markRewarded(player);
-            recordVote(player);
+            markRewarded(sender);
+            recordVote(sender);
             invalidateVoteCaches(player);
             finishRechecks(pendingKey);
             return;
@@ -197,14 +224,14 @@ public class RewardService {
         }
     }
 
-    private void markRewarded(String player) {
-        rewardStore.markRewarded(player, currentDate.get());
+    private void markRewarded(CSCommandSender sender) {
+        playerVoteStore.markRewarded(sender, currentDate.get(), clock.get());
     }
 
-    private void recordVote(String player) {
+    private void recordVote(CSCommandSender sender) {
         VoteReminderService voteReminderService = plugin.getVoteReminderService();
         if (voteReminderService != null) {
-            voteReminderService.recordVote(player);
+            voteReminderService.recordVote(sender);
         }
     }
 
@@ -240,6 +267,27 @@ public class RewardService {
         } catch (NumberFormatException e) {
             return Long.parseLong(DEFAULT_RECHECK_DELAYS.get(Math.min(index, DEFAULT_RECHECK_DELAYS.size() - 1)));
         }
+    }
+
+    private long nextVoteInMillis(CSCommandSender sender) {
+        long lastVoteAt = playerVoteStore.lastVoteAt(sender);
+        if (lastVoteAt <= 0L) {
+            return -1L;
+        }
+        return Math.max(0L, VoteReminderService.VOTE_COOLDOWN_MILLIS - (clock.get() - lastVoteAt));
+    }
+
+    private void sendAlreadyRewardedMessage(CSCommandSender sender) {
+        String message = plugin.getCSConfiguration().getString("alreadyRewardedMessage", DEFAULT_ALREADY_REWARDED_MESSAGE);
+        sender.sendMessageWithTag(message.replace("%time%", VoteTimeFormatter.formatDuration(nextVoteInMillis(sender))));
+    }
+
+    private String rewardKey(String player, String date) {
+        return date + "." + (player == null ? "" : player).toLowerCase(Locale.ROOT);
+    }
+
+    private static File dataFolder(File dataPath) {
+        return dataPath.getName().endsWith(".properties") ? dataPath.getParentFile() : dataPath;
     }
 
     private void debug(String message) {

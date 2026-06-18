@@ -142,6 +142,15 @@ public interface CSPlugin {
     }
 
     /**
+     * Resolver el UUID de un jugador cuando la plataforma lo permita.
+     * @param player nombre del jugador
+     * @return UUID o cadena vacía si no se puede resolver
+     */
+    default String resolvePlayerUniqueId(String player) {
+        return "";
+    }
+
+    /**
      * Ejecutar una tarea en el hilo principal de la plataforma
      * @param task tarea
      */

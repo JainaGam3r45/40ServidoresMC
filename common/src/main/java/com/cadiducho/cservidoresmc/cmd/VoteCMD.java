@@ -33,6 +33,10 @@ public class VoteCMD extends CSCommand {
 
         cooldown.setOnCooldown(sender.getName());
 
+        if (plugin.getRewardService().sendAlreadyRewardedIfActive(sender)) {
+            return CommandResult.SUCCESS;
+        }
+
         sender.sendMessageWithTag("&7Obteniendo voto...");
         plugin.getApiClient().validateVote(sender.getName()).thenAccept((VoteResponse voteResponse) -> {
             plugin.getRewardService().handleVoteResponse(sender.getName(), sender, voteResponse);

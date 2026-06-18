@@ -69,6 +69,7 @@ public class SpongePlugin implements CSPlugin {
     @Listener
     public void onServerStart(GameStartedServerEvent event) {
         apiClient = new ApiClient(this, new Gson());
+        new LegacyPlayerDataMigrator(this, getPluginDataFolder()).migrate();
         voteReminderService = new VoteReminderService(this);
         voteStreakService = new VoteStreakService(this);
         rewardService = new RewardService(this);
@@ -179,6 +180,16 @@ public class SpongePlugin implements CSPlugin {
             players.add(new SpongeCommandSender(player, this));
         }
         return players;
+    }
+
+    @Override
+    public String resolvePlayerUniqueId(String player) {
+        if (player == null || player.trim().isEmpty()) {
+            return "";
+        }
+        return Sponge.getServer().getPlayer(player)
+                .map(value -> value.getUniqueId().toString())
+                .orElse("");
     }
 
     @Override

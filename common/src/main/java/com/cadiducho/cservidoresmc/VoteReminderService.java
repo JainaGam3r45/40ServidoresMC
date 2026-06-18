@@ -22,20 +22,20 @@ public class VoteReminderService {
     private static final String DEFAULT_MESSAGE = "&aYa puedes volver a votar en 40ServidoresMC. Usa &2/voto40&a para recibir tu premio.";
 
     private final CSPlugin plugin;
-    private final VoteReminderStore store;
+    private final PlayerVoteStore store;
     private final ReminderScheduler scheduler;
     private final Supplier<Long> clock;
 
     public VoteReminderService(CSPlugin plugin) {
         this(plugin,
-                new File(plugin.getPluginDataFolder(), "vote-reminders.properties"),
+                plugin.getPluginDataFolder(),
                 new ScheduledReminderScheduler(),
                 System::currentTimeMillis);
     }
 
-    VoteReminderService(CSPlugin plugin, File reminderFile, ReminderScheduler scheduler, Supplier<Long> clock) {
+    VoteReminderService(CSPlugin plugin, File dataPath, ReminderScheduler scheduler, Supplier<Long> clock) {
         this.plugin = plugin;
-        this.store = new VoteReminderStore(reminderFile, plugin);
+        this.store = new PlayerVoteStore(dataFolder(dataPath), plugin);
         this.scheduler = scheduler;
         this.clock = clock;
     }
@@ -51,6 +51,10 @@ public class VoteReminderService {
 
     public void recordVote(String player) {
         recordVote(player, clock.get());
+    }
+
+    public void recordVote(CSCommandSender sender) {
+        recordVote(sender, clock.get());
     }
 
     public long lastVoteAt(String player) {
@@ -74,6 +78,12 @@ public class VoteReminderService {
     void recordVote(String player, long votedAt) {
         if (!store.recordVote(player, votedAt)) {
             debug("No se pudo guardar el último voto de " + player + ".");
+        }
+    }
+
+    void recordVote(CSCommandSender sender, long votedAt) {
+        if (!store.recordVote(sender, votedAt)) {
+            debug("No se pudo guardar el último voto de " + sender.getName() + ".");
         }
     }
 
@@ -139,6 +149,10 @@ public class VoteReminderService {
 
     private String normalizePlayer(String player) {
         return (player == null ? "" : player).toLowerCase(Locale.ROOT);
+    }
+
+    private File dataFolder(File dataPath) {
+        return dataPath.getName().endsWith(".properties") ? dataPath.getParentFile() : dataPath;
     }
 
     private void debug(String message) {

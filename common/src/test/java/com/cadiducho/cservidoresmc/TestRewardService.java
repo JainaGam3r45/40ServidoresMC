@@ -126,6 +126,21 @@ public class TestRewardService {
         assertEquals(1, plugin.getPluginMetrics().getRewardsDelivered());
     }
 
+    @Test
+    void localRewardedStateOverridesNotVotedMessage() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        RewardService rewardService = new RewardService(plugin, tempDir, new ManualScheduler(), () -> "2026-06-18", () -> 1_000L);
+        plugin.setRewardService(rewardService);
+        plugin.setApiClient(new FakeApiClient(plugin));
+        TestSender sender = new TestSender("Cadiducho");
+
+        rewardService.deliverReward(sender, true);
+        rewardService.handleVoteResponse(sender.getName(), sender, vote("0"));
+
+        assertEquals(false, sender.messages.contains("&6No has votado hoy! Puedes hacerlo en &a https://40servidoresmc.es"));
+        assertEquals(true, sender.messages.get(sender.messages.size() - 1).contains("Ya has votado y recibido tu recompensa"));
+    }
+
     private RewardService rewardService(TestPlugin plugin, ManualScheduler scheduler) {
         return new RewardService(plugin, new File(tempDir, "rewarded-votes.properties"), scheduler, () -> "2026-06-18");
     }
@@ -334,9 +349,12 @@ public class TestRewardService {
     private static class TestSender implements CSCommandSender {
 
         private final String name;
+        private final String uuid;
+        private final List<String> messages = new ArrayList<>();
 
         private TestSender(String name) {
             this.name = name;
+            this.uuid = "0f50d3c1-2d53-47d8-9f5a-10153b5f9770";
         }
 
         @Override
@@ -346,11 +364,17 @@ public class TestRewardService {
 
         @Override
         public void sendMessage(String message) {
+            messages.add(message);
         }
 
         @Override
         public String getName() {
             return name;
+        }
+
+        @Override
+        public String getUniqueId() {
+            return uuid;
         }
 
         @Override

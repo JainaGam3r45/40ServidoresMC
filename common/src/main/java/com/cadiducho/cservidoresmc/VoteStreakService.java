@@ -15,25 +15,25 @@ import java.util.function.Supplier;
 public class VoteStreakService {
 
     private final CSPlugin plugin;
-    private final VoteStreakStore store;
+    private final PlayerVoteStore store;
     private final Supplier<LocalDate> currentDay;
 
     public VoteStreakService(CSPlugin plugin) {
         this(plugin,
-                new File(plugin.getPluginDataFolder(), "vote-streaks.properties"),
+                plugin.getPluginDataFolder(),
                 () -> LocalDate.now(ZoneId.systemDefault()));
     }
 
-    VoteStreakService(CSPlugin plugin, File streakFile, Supplier<LocalDate> currentDay) {
+    VoteStreakService(CSPlugin plugin, File dataPath, Supplier<LocalDate> currentDay) {
         this.plugin = plugin;
-        this.store = new VoteStreakStore(streakFile, plugin);
+        this.store = new PlayerVoteStore(dataFolder(dataPath), plugin);
         this.currentDay = currentDay;
     }
 
     public VoteStreakStore.Snapshot recordVote(CSCommandSender sender) {
         String player = sender.getName();
         String uuid = sender.getUniqueId();
-        VoteStreakStore.Snapshot snapshot = store.recordVote(player, uuid, currentDay.get());
+        VoteStreakStore.Snapshot snapshot = store.recordStreak(player, uuid, currentDay.get());
         if (!snapshot.isSaved()) {
             debug("No se pudo guardar la racha de " + player + ".");
             return snapshot;
@@ -44,11 +44,11 @@ public class VoteStreakService {
     }
 
     public VoteStreakStore.Snapshot find(String player) {
-        return store.find(player);
+        return store.findStreak(player);
     }
 
     public boolean reset(String player) {
-        return store.reset(player);
+        return store.resetStreak(player);
     }
 
     public int nextRewardMilestone(int streak) {
@@ -109,5 +109,9 @@ public class VoteStreakService {
         if (plugin.isDebug()) {
             plugin.log("[VoteStreak] " + message);
         }
+    }
+
+    private static File dataFolder(File dataPath) {
+        return dataPath.getName().endsWith(".properties") ? dataPath.getParentFile() : dataPath;
     }
 }
