@@ -33,3 +33,15 @@ jobs:
 
       - name: Build
         run: ./gradlew :common:build :bukkit:build :sponge:api7:build
+
+      - name: Upload Bukkit jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: 40ServidoresMC-Bukkit
+          path: bukkit/build/libs/*.jar
+
+      - name: Upload Sponge API7 jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: 40ServidoresMC-Sponge-API7
+          path: sponge/api7/build/libs/*.jar
