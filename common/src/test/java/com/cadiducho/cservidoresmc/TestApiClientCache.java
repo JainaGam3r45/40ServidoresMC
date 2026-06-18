@@ -18,10 +18,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 public class TestApiClientCache {
@@ -112,6 +114,47 @@ public class TestApiClientCache {
         assertEquals(4, requester.requests());
     }
 
+    @Test
+    void apiRequestsAreCounted() {
+        ManualClock clock = new ManualClock();
+        CountingRequester requester = new CountingRequester();
+        TestPlugin plugin = new TestPlugin();
+        requester.addResponse(serverStatsJson("Servidor", 1));
+        ApiClient apiClient = new ApiClient(plugin, new Gson(), requester, "http://localhost/api?clave=", clock);
+
+        apiClient.fetchServerStats().join();
+
+        assertEquals(1, plugin.getPluginMetrics().getApiRequests());
+    }
+
+    @Test
+    void apiFailuresAreCounted() {
+        ManualClock clock = new ManualClock();
+        CountingRequester requester = new CountingRequester();
+        TestPlugin plugin = new TestPlugin();
+        ApiClient apiClient = new ApiClient(plugin, new Gson(), requester, "http://localhost/api?clave=", clock);
+
+        assertThrows(CompletionException.class, () -> apiClient.fetchServerStats().join());
+
+        assertEquals(1, plugin.getPluginMetrics().getApiRequests());
+        assertEquals(1, plugin.getPluginMetrics().getApiFailures());
+    }
+
+    @Test
+    void cachedVoteChecksAreNotCountedTwice() {
+        ManualClock clock = new ManualClock();
+        CountingRequester requester = new CountingRequester();
+        TestPlugin plugin = new TestPlugin();
+        requester.addResponse(voteJson("0"));
+        ApiClient apiClient = new ApiClient(plugin, new Gson(), requester, "http://localhost/api?clave=", clock);
+
+        apiClient.validateVote("Cadiducho").join();
+        apiClient.validateVote("cadiducho").join();
+
+        assertEquals(1, plugin.getPluginMetrics().getVoteChecks());
+        assertEquals(1, plugin.getPluginMetrics().getApiRequests());
+    }
+
     private ApiClient apiClient(CountingRequester requester, ManualClock clock) {
         return new ApiClient(new TestPlugin(), new Gson(), requester, "http://localhost/api?clave=", clock);
     }
@@ -166,6 +209,7 @@ public class TestApiClientCache {
     private static class TestPlugin implements CSPlugin {
 
         private final TestConfiguration configuration = new TestConfiguration(this);
+        private final PluginMetrics pluginMetrics = new PluginMetrics();
 
         @Override
         public void log(String text) {
@@ -192,6 +236,11 @@ public class TestApiClientCache {
         @Override
         public Updater getUpdater() {
             return null;
+        }
+
+        @Override
+        public PluginMetrics getPluginMetrics() {
+            return pluginMetrics;
         }
 
         @Override

@@ -91,6 +91,7 @@ public class TestHttpRequester {
 
         assertEquals("recovered", body);
         assertEquals(3, attempts.get());
+        assertEquals(2, logger.retries());
     }
 
     @Test
@@ -128,6 +129,7 @@ public class TestHttpRequester {
     private static class TestLogger implements HttpLogger {
 
         private final List<String> entries = new ArrayList<>();
+        private final AtomicInteger retries = new AtomicInteger();
 
         @Override
         public void debug(String text) {
@@ -137,6 +139,16 @@ public class TestHttpRequester {
         @Override
         public void error(String text) {
             entries.add(text);
+        }
+
+        @Override
+        public void retry(String text) {
+            retries.incrementAndGet();
+            entries.add(text);
+        }
+
+        private int retries() {
+            return retries.get();
         }
     }
 }
