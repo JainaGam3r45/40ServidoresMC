@@ -62,6 +62,22 @@ public class TestRewardService {
     }
 
     @Test
+    void duplicateRewardDoesNotDuplicateStreakMilestone() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        plugin.configuration.streakRewards.put("1", Collections.singletonList("give %player% diamond %streak%"));
+        RewardService rewardService = rewardService(plugin, new ManualScheduler());
+        plugin.setRewardService(rewardService);
+        plugin.setVoteStreakService(new VoteStreakService(plugin, new File(tempDir, "vote-streaks.properties"), () -> java.time.LocalDate.parse("2026-06-18")));
+        plugin.setApiClient(new FakeApiClient(plugin));
+        TestSender sender = new TestSender("Cadiducho");
+
+        rewardService.deliverReward(sender.getName(), sender, true);
+        rewardService.deliverReward(sender.getName(), sender, true);
+
+        assertEquals(Arrays.asList("give Cadiducho diamond 1", "money add Cadiducho 10"), plugin.commands);
+    }
+
+    @Test
     void apiErrorDoesNotDuplicateReward() {
         TestPlugin plugin = new TestPlugin(tempDir);
         ManualScheduler scheduler = new ManualScheduler();
@@ -151,6 +167,7 @@ public class TestRewardService {
         private final List<String> broadcasts = new ArrayList<>();
         private ApiClient apiClient;
         private RewardService rewardService;
+        private VoteStreakService voteStreakService;
 
         private TestPlugin(File dataFolder) {
             this.dataFolder = dataFolder;
@@ -162,6 +179,10 @@ public class TestRewardService {
 
         private void setRewardService(RewardService rewardService) {
             this.rewardService = rewardService;
+        }
+
+        private void setVoteStreakService(VoteStreakService voteStreakService) {
+            this.voteStreakService = voteStreakService;
         }
 
         @Override
@@ -189,6 +210,11 @@ public class TestRewardService {
         @Override
         public RewardService getRewardService() {
             return rewardService;
+        }
+
+        @Override
+        public VoteStreakService getVoteStreakService() {
+            return voteStreakService;
         }
 
         @Override
@@ -228,6 +254,7 @@ public class TestRewardService {
         private final Map<String, String> strings = new HashMap<>();
         private final Map<String, Integer> ints = new HashMap<>();
         private final Map<String, Boolean> booleans = new HashMap<>();
+        private final Map<String, List<String>> streakRewards = new HashMap<>();
 
         private TestConfiguration(CSPlugin plugin) {
             this.plugin = plugin;
@@ -271,6 +298,14 @@ public class TestRewardService {
 
         @Override
         public Map<String, String> getStringMap(String path, Map<String, String> def) {
+            return def;
+        }
+
+        @Override
+        public Map<String, List<String>> getStringListMap(String path, Map<String, List<String>> def) {
+            if ("streakRewards".equals(path)) {
+                return streakRewards;
+            }
             return def;
         }
 
