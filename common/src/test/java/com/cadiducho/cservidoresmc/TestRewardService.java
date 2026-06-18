@@ -96,6 +96,22 @@ public class TestRewardService {
     }
 
     @Test
+    void exposesPendingAutoRewardState() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        ManualScheduler scheduler = new ManualScheduler();
+        RewardService rewardService = rewardService(plugin, scheduler);
+        plugin.setRewardService(rewardService);
+        plugin.setApiClient(new FakeApiClient(plugin, vote("1")));
+        TestSender sender = new TestSender("Cadiducho");
+
+        rewardService.handleVoteResponse(sender.getName(), sender, vote("0"));
+
+        assertEquals(true, rewardService.hasPendingReward("cadiducho"));
+        scheduler.runNext();
+        assertEquals(false, rewardService.hasPendingReward("Cadiducho"));
+    }
+
+    @Test
     void manualSuccessUsesRewardService() {
         TestPlugin plugin = new TestPlugin(tempDir);
         RewardService rewardService = rewardService(plugin, new ManualScheduler());

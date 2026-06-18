@@ -31,7 +31,22 @@ public class TtlCache<K, V> {
             return;
         }
 
-        entries.put(key, new CacheEntry<>(value, clock.currentTimeMillis() + ttlMillis));
+        long now = clock.currentTimeMillis();
+        entries.put(key, new CacheEntry<>(value, now, now + ttlMillis));
+    }
+
+    public V peek(K key) {
+        CacheEntry<V> entry = entries.get(key);
+        return entry == null ? null : entry.value;
+    }
+
+    public long ageMillis(K key) {
+        CacheEntry<V> entry = entries.get(key);
+        if (entry == null) {
+            return -1L;
+        }
+
+        return Math.max(0L, clock.currentTimeMillis() - entry.createdAtMillis);
     }
 
     public void invalidate(K key) {
@@ -45,10 +60,12 @@ public class TtlCache<K, V> {
     private static class CacheEntry<V> {
 
         private final V value;
+        private final long createdAtMillis;
         private final long expiresAtMillis;
 
-        private CacheEntry(V value, long expiresAtMillis) {
+        private CacheEntry(V value, long createdAtMillis, long expiresAtMillis) {
             this.value = value;
+            this.createdAtMillis = createdAtMillis;
             this.expiresAtMillis = expiresAtMillis;
         }
 

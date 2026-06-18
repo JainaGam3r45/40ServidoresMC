@@ -50,7 +50,24 @@ public class TestVoteReminderService {
         clock.addAndGet(VoteReminderService.VOTE_COOLDOWN_MILLIS - 1L);
         service.checkReminders();
 
+        assertEquals(1L, service.nextVoteInMillis(sender.getName()));
+        assertFalse(service.canVote(sender.getName()));
         assertEquals(Collections.emptyList(), sender.messages);
+    }
+
+    @Test
+    void exposesLocalVoteStatus() {
+        AtomicLong clock = new AtomicLong(1_000L);
+        TestPlugin plugin = new TestPlugin(tempDir);
+        VoteReminderService service = reminderService(plugin, new ManualScheduler(), clock);
+
+        service.recordVote("Cadiducho", clock.get());
+        clock.addAndGet(VoteReminderService.VOTE_COOLDOWN_MILLIS);
+
+        assertEquals(1_000L, service.lastVoteAt("cadiducho"));
+        assertEquals(0L, service.nextVoteInMillis("Cadiducho"));
+        assertEquals(-1L, service.nextVoteInMillis("SinDatos"));
+        assertEquals(true, service.canVote("Cadiducho"));
     }
 
     @Test

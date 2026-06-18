@@ -40,6 +40,9 @@ public class TestApiClientCache {
         ServerStats secondStats = apiClient.fetchServerStats().join();
 
         assertSame(firstStats, secondStats);
+        assertSame(firstStats, apiClient.cachedServerStats());
+        assertEquals(0L, apiClient.serverStatsCacheAgeMillis());
+        assertEquals("ok", apiClient.apiStatus());
         assertEquals(1, requester.requests());
     }
 
@@ -53,6 +56,8 @@ public class TestApiClientCache {
 
         ServerStats firstStats = apiClient.fetchServerStats().join();
         clock.advanceSeconds(61);
+        assertSame(firstStats, apiClient.cachedServerStats());
+        assertEquals(61_000L, apiClient.serverStatsCacheAgeMillis());
         ServerStats refreshedStats = apiClient.fetchServerStats().join();
 
         assertNotSame(firstStats, refreshedStats);
@@ -139,6 +144,7 @@ public class TestApiClientCache {
 
         assertEquals(1, plugin.getPluginMetrics().getApiRequests());
         assertEquals(1, plugin.getPluginMetrics().getApiFailures());
+        assertEquals("error", apiClient.apiStatus());
     }
 
     @Test

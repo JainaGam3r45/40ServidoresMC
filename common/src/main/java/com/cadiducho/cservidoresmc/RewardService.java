@@ -113,6 +113,12 @@ public class RewardService {
         return true;
     }
 
+    public boolean hasPendingReward(String player) {
+        synchronized (pendingRechecks) {
+            return pendingRechecks.contains(rewardStore.rewardKey(player, currentDate.get()));
+        }
+    }
+
     public void shutdown() {
         scheduler.shutdown();
     }

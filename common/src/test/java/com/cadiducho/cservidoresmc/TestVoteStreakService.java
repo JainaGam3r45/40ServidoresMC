@@ -50,8 +50,26 @@ public class TestVoteStreakService {
         VoteStreakStore.Snapshot snapshot = service.recordVote(sender);
 
         assertEquals(1, snapshot.getStreak());
+        assertEquals(1, snapshot.getBestStreak());
         assertEquals("2026-06-17", snapshot.getLastDay());
         assertTrue(snapshot.getRewardedMilestones().isEmpty());
+    }
+
+    @Test
+    void tracksBestStreakAndNextReward() {
+        AtomicReference<LocalDate> day = new AtomicReference<>(LocalDate.parse("2026-06-17"));
+        TestPlugin plugin = new TestPlugin(tempDir);
+        plugin.configuration.streakRewards.put("3", Collections.singletonList("give %player% diamond 1"));
+        VoteStreakService service = service(plugin, day);
+        TestSender sender = new TestSender("Cadiducho", "0f50d3c1-2d53-47d8-9f5a-10153b5f9770");
+
+        service.recordVote(sender);
+        day.set(LocalDate.parse("2026-06-18"));
+        VoteStreakStore.Snapshot snapshot = service.recordVote(sender);
+
+        assertEquals(2, snapshot.getBestStreak());
+        assertEquals(3, service.nextRewardMilestone(snapshot.getStreak()));
+        assertEquals(0, service.nextRewardMilestone(3));
     }
 
     @Test
@@ -96,6 +114,7 @@ public class TestVoteStreakService {
         VoteStreakStore.Snapshot reloaded = reloadedStore.find("Cadiducho");
 
         assertEquals(1, reloaded.getStreak());
+        assertEquals(1, reloaded.getBestStreak());
         assertEquals("2026-06-18", reloaded.getLastDay());
         assertEquals(Collections.singleton(1), reloaded.getRewardedMilestones());
 

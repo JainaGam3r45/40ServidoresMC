@@ -18,6 +18,7 @@ public class VoteStreakStore {
 
     private static final String LAST_DAY_SUFFIX = ".lastDay";
     private static final String STREAK_SUFFIX = ".streak";
+    private static final String BEST_STREAK_SUFFIX = ".bestStreak";
     private static final String MILESTONES_SUFFIX = ".milestones";
     private static final String NAME_SUFFIX = ".name";
     private static final String UUID_SUFFIX = ".uuid";
@@ -37,6 +38,7 @@ public class VoteStreakStore {
         String key = resolveKey(player, uuid);
         String lastDay = streaks.getProperty(key + LAST_DAY_SUFFIX);
         int streak = getInt(key + STREAK_SUFFIX);
+        int bestStreak = Math.max(getInt(key + BEST_STREAK_SUFFIX), streak);
         Set<Integer> rewardedMilestones = getMilestones(key);
         boolean sameDay = voteDay.toString().equals(lastDay);
 
@@ -52,13 +54,15 @@ public class VoteStreakStore {
         setIdentity(key, player, uuid);
         streaks.setProperty(key + LAST_DAY_SUFFIX, voteDay.toString());
         streaks.setProperty(key + STREAK_SUFFIX, String.valueOf(streak));
+        bestStreak = Math.max(bestStreak, streak);
+        streaks.setProperty(key + BEST_STREAK_SUFFIX, String.valueOf(bestStreak));
         setMilestones(key, rewardedMilestones);
 
         if (!save()) {
-            return new Snapshot(key, player, uuid, lastDay, getInt(key + STREAK_SUFFIX), rewardedMilestones, false);
+            return new Snapshot(key, player, uuid, lastDay, getInt(key + STREAK_SUFFIX), bestStreak, rewardedMilestones, false);
         }
 
-        return new Snapshot(key, player, uuid, voteDay.toString(), streak, rewardedMilestones, true);
+        return new Snapshot(key, player, uuid, voteDay.toString(), streak, bestStreak, rewardedMilestones, true);
     }
 
     synchronized Snapshot find(String player) {
@@ -94,7 +98,8 @@ public class VoteStreakStore {
         String uuid = streaks.getProperty(key + UUID_SUFFIX, "");
         String lastDay = streaks.getProperty(key + LAST_DAY_SUFFIX, "");
         int streak = getInt(key + STREAK_SUFFIX);
-        return new Snapshot(key, player, uuid, lastDay, streak, getMilestones(key), true);
+        int bestStreak = Math.max(getInt(key + BEST_STREAK_SUFFIX), streak);
+        return new Snapshot(key, player, uuid, lastDay, streak, bestStreak, getMilestones(key), true);
     }
 
     private String resolveKey(String player, String uuid) {
@@ -180,6 +185,7 @@ public class VoteStreakStore {
     private void removeRecord(String key) {
         streaks.remove(key + LAST_DAY_SUFFIX);
         streaks.remove(key + STREAK_SUFFIX);
+        streaks.remove(key + BEST_STREAK_SUFFIX);
         streaks.remove(key + MILESTONES_SUFFIX);
         streaks.remove(key + NAME_SUFFIX);
         streaks.remove(key + UUID_SUFFIX);
@@ -239,15 +245,17 @@ public class VoteStreakStore {
         private final String uuid;
         private final String lastDay;
         private final int streak;
+        private final int bestStreak;
         private final Set<Integer> rewardedMilestones;
         private final boolean saved;
 
-        Snapshot(String key, String player, String uuid, String lastDay, int streak, Set<Integer> rewardedMilestones, boolean saved) {
+        Snapshot(String key, String player, String uuid, String lastDay, int streak, int bestStreak, Set<Integer> rewardedMilestones, boolean saved) {
             this.key = key;
             this.player = player;
             this.uuid = uuid;
             this.lastDay = lastDay;
             this.streak = streak;
+            this.bestStreak = bestStreak;
             this.rewardedMilestones = new TreeSet<>(rewardedMilestones);
             this.saved = saved;
         }
@@ -270,6 +278,10 @@ public class VoteStreakStore {
 
         public int getStreak() {
             return streak;
+        }
+
+        public int getBestStreak() {
+            return bestStreak;
         }
 
         public Set<Integer> getRewardedMilestones() {

@@ -51,6 +51,15 @@ public class VoteStreakService {
         return store.reset(player);
     }
 
+    public int nextRewardMilestone(int streak) {
+        for (Integer milestone : rewardsByMilestone().keySet()) {
+            if (milestone > streak) {
+                return milestone;
+            }
+        }
+        return 0;
+    }
+
     private void deliverMilestoneRewards(String player, String uuid, VoteStreakStore.Snapshot snapshot) {
         Map<Integer, List<String>> rewards = rewardsByMilestone();
         for (Map.Entry<Integer, List<String>> reward : rewards.entrySet()) {

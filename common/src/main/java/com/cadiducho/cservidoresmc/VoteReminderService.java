@@ -53,6 +53,24 @@ public class VoteReminderService {
         recordVote(player, clock.get());
     }
 
+    public long lastVoteAt(String player) {
+        return store.lastVoteAt(player);
+    }
+
+    public boolean canVote(String player) {
+        long lastVoteAt = lastVoteAt(player);
+        return lastVoteAt > 0L && nextVoteInMillis(player) <= 0L;
+    }
+
+    public long nextVoteInMillis(String player) {
+        long lastVoteAt = lastVoteAt(player);
+        if (lastVoteAt <= 0L) {
+            return -1L;
+        }
+
+        return Math.max(0L, VOTE_COOLDOWN_MILLIS - (clock.get() - lastVoteAt));
+    }
+
     void recordVote(String player, long votedAt) {
         if (!store.recordVote(player, votedAt)) {
             debug("No se pudo guardar el último voto de " + player + ".");

@@ -23,6 +23,9 @@ public class ApiClient {
 
     private static final String API_URL = "https://40servidoresmc.es/api2.php?clave=";
     private static final String SERVER_STATS_CACHE_KEY = "server-stats";
+    private static final String API_STATUS_UNKNOWN = "unknown";
+    private static final String API_STATUS_OK = "ok";
+    private static final String API_STATUS_ERROR = "error";
     private static final int DEFAULT_SERVER_STATS_TTL_SECONDS = 60;
     private static final int DEFAULT_VOTE_CHECK_NEGATIVE_TTL_SECONDS = 5;
 
@@ -32,6 +35,7 @@ public class ApiClient {
     private final String apiUrl;
     private final TtlCache<String, ServerStats> serverStatsCache;
     private final TtlCache<String, VoteResponse> voteCache;
+    private volatile String apiStatus = API_STATUS_UNKNOWN;
 
     public ApiClient(CSPlugin plugin, Gson gson) {
         this(plugin, gson, new HttpRequester(), API_URL, new SystemClock());
@@ -97,6 +101,18 @@ public class ApiClient {
         });
     }
 
+    public ServerStats cachedServerStats() {
+        return cacheEnabled() ? serverStatsCache.peek(SERVER_STATS_CACHE_KEY) : null;
+    }
+
+    public long serverStatsCacheAgeMillis() {
+        return cacheEnabled() ? serverStatsCache.ageMillis(SERVER_STATS_CACHE_KEY) : -1L;
+    }
+
+    public String apiStatus() {
+        return apiStatus;
+    }
+
     public void invalidateServerStatsCache() {
         serverStatsCache.invalidate(SERVER_STATS_CACHE_KEY);
     }
@@ -126,9 +142,12 @@ public class ApiClient {
         try {
             plugin.debugLog(requestName + " iniciado.");
             String body = httpRequester.request(url, method, requestName, httpConfig(), httpLogger());
-            return gson.fromJson(body, type);
+            T fetched = gson.fromJson(body, type);
+            apiStatus = API_STATUS_OK;
+            return fetched;
         } catch (IOException | JsonSyntaxException e) {
             plugin.getPluginMetrics().incrementApiFailures();
+            apiStatus = API_STATUS_ERROR;
             plugin.debugLog(requestName + " falló: " + e.getMessage());
             throw e;
         }
