@@ -18,6 +18,7 @@ public class CSCommandManager {
         this.commandList = new ArrayList<>();
 
         registerCommand(new ReloadCMD());
+        registerCommand(new MetricsCMD());
         registerCommand(new StatsCMD());
         registerCommand(new TestCMD());
         registerCommand(new UpdateCMD());
