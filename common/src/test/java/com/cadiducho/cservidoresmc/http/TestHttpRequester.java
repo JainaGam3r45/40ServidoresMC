@@ -114,6 +114,17 @@ public class TestHttpRequester {
         assertEquals(3, attempts.get());
     }
 
+    @Test
+    void retryDelayUsesExponentialBackoffWithJitterCap() {
+        long first = requester.retryDelayMillis(new HttpConfig(500, 500, 2, 250), 1);
+        long third = requester.retryDelayMillis(new HttpConfig(500, 500, 2, 250), 3);
+        long capped = requester.retryDelayMillis(new HttpConfig(500, 500, 2, 5000), 10);
+
+        org.junit.jupiter.api.Assertions.assertTrue(first >= 250L && first <= 500L);
+        org.junit.jupiter.api.Assertions.assertTrue(third >= 1000L && third <= 1250L);
+        org.junit.jupiter.api.Assertions.assertTrue(capped <= 5000L);
+    }
+
     private URL url(String path) throws IOException {
         return new URL("http://127.0.0.1:" + server.getAddress().getPort() + path);
     }

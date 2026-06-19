@@ -29,9 +29,13 @@ public class LegacyPlayerDataMigrator {
     private final PlayerVoteStore playerVoteStore;
 
     public LegacyPlayerDataMigrator(CSPlugin plugin, File dataFolder) {
+        this(plugin, dataFolder, new PlayerVoteStore(dataFolder, plugin));
+    }
+
+    public LegacyPlayerDataMigrator(CSPlugin plugin, File dataFolder, PlayerVoteStore playerVoteStore) {
         this.plugin = plugin;
         this.dataFolder = dataFolder;
-        this.playerVoteStore = new PlayerVoteStore(dataFolder, plugin);
+        this.playerVoteStore = playerVoteStore;
     }
 
     public void migrate() {

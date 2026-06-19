@@ -7,6 +7,7 @@ public class HttpConfig {
     public static final int DEFAULT_TIMEOUT = 5000;
     public static final int DEFAULT_RETRIES = 2;
     public static final int DEFAULT_RETRY_BACKOFF = 250;
+    public static final int MAX_RETRIES = 5;
 
     private final int connectTimeout;
     private final int readTimeout;
@@ -16,7 +17,7 @@ public class HttpConfig {
     public HttpConfig(int connectTimeout, int readTimeout, int retries, int retryBackoff) {
         this.connectTimeout = positiveOrDefault(connectTimeout, DEFAULT_TIMEOUT);
         this.readTimeout = positiveOrDefault(readTimeout, DEFAULT_TIMEOUT);
-        this.retries = Math.max(0, retries);
+        this.retries = Math.min(MAX_RETRIES, Math.max(0, retries));
         this.retryBackoff = positiveOrDefault(retryBackoff, DEFAULT_RETRY_BACKOFF);
     }
 

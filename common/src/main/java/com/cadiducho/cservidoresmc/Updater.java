@@ -15,6 +15,10 @@ import java.net.URL;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Supplier;
 
 /**
  * Clase para comprobar las actualizaciones a través de Github
@@ -32,12 +36,17 @@ public class Updater {
     private final Gson gson;
     private final String releaseUrl;
     private final String updateUrl;
+    private final Executor executor;
 
     public Updater(CSPlugin instance, String vInstalada, String vMinecraft) {
-        this(instance, vInstalada, vMinecraft, new HttpRequester(), new Gson(), RELEASE_URL, UPDATE_URL);
+        this(instance, vInstalada, vMinecraft, new HttpRequester(), new Gson(), RELEASE_URL, UPDATE_URL, instance.getAsyncExecutor());
     }
 
     Updater(CSPlugin instance, String vInstalada, String vMinecraft, HttpRequester httpRequester, Gson gson, String releaseUrl, String updateUrl) {
+        this(instance, vInstalada, vMinecraft, httpRequester, gson, releaseUrl, updateUrl, ForkJoinPool.commonPool());
+    }
+
+    Updater(CSPlugin instance, String vInstalada, String vMinecraft, HttpRequester httpRequester, Gson gson, String releaseUrl, String updateUrl, Executor executor) {
         plugin = instance;
         versionInstalada = vInstalada;
         versionMinecraft = vMinecraft;
@@ -45,6 +54,7 @@ public class Updater {
         this.gson = gson;
         this.releaseUrl = releaseUrl;
         this.updateUrl = updateUrl;
+        this.executor = executor == null ? ForkJoinPool.commonPool() : executor;
     }
     
     private final String ERROR = "Error obteniendo la versión.";
@@ -73,6 +83,9 @@ public class Updater {
 
         final CSCommandSender finalSender = sender;
         fetchLatestRelease().thenAccept((GitHubReleaseInfo releaseInfo) -> {
+            if (!plugin.isActive()) {
+                return;
+            }
             if (releaseInfo == null) {
                 checkLegacyUpdate(finalSender, confirmation);
                 return;
@@ -81,17 +94,20 @@ public class Updater {
             if (isNewerVersion(releaseInfo.getVersion(), versionInstalada)) {
                 String link = releaseInfo.getHtmlUrl() == null ? String.format(RELEASE_TAG_URL, releaseInfo.getTagName()) : releaseInfo.getHtmlUrl();
                 String format = String.format(NEW_VERSION, releaseInfo.getVersion(), releaseInfo.getDescription(), link);
-                finalSender.sendMessageWithTag(format);
+                sendIfActive(finalSender, format);
                 return;
             }
 
             if (isValidVersion(releaseInfo.getVersion())) {
-                finalSender.sendMessageWithTag(UPDATED);
+                sendIfActive(finalSender, UPDATED);
                 return;
             }
 
             checkLegacyUpdate(finalSender, confirmation);
         }).exceptionally(e -> {
+            if (!plugin.isActive()) {
+                return null;
+            }
             plugin.debugLog("No se pudo consultar la última release de GitHub: " + e.getMessage());
             checkLegacyUpdate(finalSender, confirmation);
             return null;
@@ -100,6 +116,9 @@ public class Updater {
 
     private void checkLegacyUpdate(CSCommandSender sender, boolean confirmation) {
         fetchUpdate().thenAccept((UpdaterInfo updaterInfo) -> {
+            if (!plugin.isActive()) {
+                return;
+            }
             Optional<Map.Entry<String, String>> recommendedVersion = updaterInfo.getPluginForMinecraft(versionMinecraft);
             if (recommendedVersion.isPresent()) {
                 String updaterVersion = recommendedVersion.get().getKey();
@@ -108,14 +127,17 @@ public class Updater {
                 if (isNewerVersion(updaterVersion, versionInstalada)) {
                     String link = String.format(RELEASE_TAG_URL, updaterVersion);
                     String format = String.format(NEW_VERSION, updaterVersion, updateDescription, link);
-                    sender.sendMessageWithTag(format);
+                    sendIfActive(sender, format);
                 } else {
-                    sender.sendMessageWithTag(UPDATED);
+                    sendIfActive(sender, UPDATED);
                 }
             } else if (confirmation) {
-                sender.sendMessageWithTag("No hay versión más moderna recomendada para tu versión de Minecraft.");
+                sendIfActive(sender, "No hay versión más moderna recomendada para tu versión de Minecraft.");
             }
         }).exceptionally(e -> {
+            if (!plugin.isActive()) {
+                return null;
+            }
             plugin.log(ERROR + " El servidor continuará iniciando con normalidad.");
             plugin.debugLog("Causa del updater: " + e.getMessage());
             return null;
@@ -123,7 +145,7 @@ public class Updater {
     }
 
     private CompletableFuture<GitHubReleaseInfo> fetchLatestRelease() {
-        return CompletableFuture.supplyAsync(() -> {
+        return submitRequest(() -> {
             try {
                 String body = httpRequester.get(new URL(releaseUrl), "Última release 40ServidoresMC", httpConfig(), httpLogger());
                 return gson.fromJson(body, GitHubReleaseInfo.class);
@@ -134,7 +156,7 @@ public class Updater {
     }
 
     private CompletableFuture<UpdaterInfo> fetchUpdate() {
-        return CompletableFuture.supplyAsync(() -> {
+        return submitRequest(() -> {
             try {
                 String body = httpRequester.get(new URL(updateUrl), "Updater 40ServidoresMC", httpConfig(), httpLogger());
                 return gson.fromJson(body, UpdaterInfo.class);
@@ -195,6 +217,20 @@ public class Updater {
                 plugin.logError(text);
             }
         };
+    }
+
+    private void sendIfActive(CSCommandSender sender, String message) {
+        plugin.runSyncIfActive(() -> sender.sendMessageWithTag(message));
+    }
+
+    private <T> CompletableFuture<T> submitRequest(Supplier<T> supplier) {
+        try {
+            return CompletableFuture.supplyAsync(supplier, executor);
+        } catch (RejectedExecutionException ex) {
+            CompletableFuture<T> future = new CompletableFuture<>();
+            future.completeExceptionally(new IllegalStateException("HTTP executor rejected the request.", ex));
+            return future;
+        }
     }
 
 }

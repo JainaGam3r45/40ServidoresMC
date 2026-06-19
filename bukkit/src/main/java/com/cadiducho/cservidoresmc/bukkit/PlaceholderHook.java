@@ -86,36 +86,40 @@ public class PlaceholderHook extends PlaceholderExpansion {
         if (playerName == null) {
             return playerFallback(placeholder);
         }
+        String uuid = player.getUniqueId() == null ? "" : player.getUniqueId().toString();
 
         VoteReminderService voteReminderService = bukkitPlugin.getVoteReminderService();
         VoteStreakService voteStreakService = bukkitPlugin.getVoteStreakService();
         RewardService rewardService = bukkitPlugin.getRewardService();
+        if (voteReminderService != null) {
+            voteReminderService.requestLoad(playerName, uuid);
+        }
 
         if ("player_last_vote".equals(placeholder)) {
-            long lastVoteAt = voteReminderService == null ? 0L : voteReminderService.lastVoteAt(playerName);
+            long lastVoteAt = voteReminderService == null ? 0L : voteReminderService.cachedLastVoteAt(playerName, uuid);
             return lastVoteAt <= 0L ? notAvailable() : formatDate(lastVoteAt);
         }
         if ("player_last_vote_ago".equals(placeholder)) {
-            long lastVoteAt = voteReminderService == null ? 0L : voteReminderService.lastVoteAt(playerName);
+            long lastVoteAt = voteReminderService == null ? 0L : voteReminderService.cachedLastVoteAt(playerName, uuid);
             return lastVoteAt <= 0L ? notAvailable() : formatDuration(System.currentTimeMillis() - lastVoteAt);
         }
         if ("player_can_vote".equals(placeholder)) {
-            return voteReminderService == null ? booleanValue(false) : booleanValue(voteReminderService.canVote(playerName));
+            return voteReminderService == null ? booleanValue(false) : booleanValue(voteReminderService.cachedCanVote(playerName, uuid));
         }
         if ("player_next_vote_in".equals(placeholder)) {
-            long nextVoteIn = voteReminderService == null ? -1L : voteReminderService.nextVoteInMillis(playerName);
+            long nextVoteIn = voteReminderService == null ? -1L : voteReminderService.cachedNextVoteInMillis(playerName, uuid);
             return nextVoteIn < 0L ? notAvailable() : formatDuration(nextVoteIn);
         }
         if ("player_streak".equals(placeholder)) {
-            VoteStreakStore.Snapshot snapshot = voteStreakService == null ? null : voteStreakService.find(playerName);
+            VoteStreakStore.Snapshot snapshot = voteStreakService == null ? null : voteStreakService.cachedFind(playerName, uuid);
             return snapshot == null ? zero() : String.valueOf(snapshot.getStreak());
         }
         if ("player_best_streak".equals(placeholder)) {
-            VoteStreakStore.Snapshot snapshot = voteStreakService == null ? null : voteStreakService.find(playerName);
+            VoteStreakStore.Snapshot snapshot = voteStreakService == null ? null : voteStreakService.cachedFind(playerName, uuid);
             return snapshot == null ? zero() : String.valueOf(snapshot.getBestStreak());
         }
         if ("player_next_streak_reward".equals(placeholder)) {
-            VoteStreakStore.Snapshot snapshot = voteStreakService == null ? null : voteStreakService.find(playerName);
+            VoteStreakStore.Snapshot snapshot = voteStreakService == null ? null : voteStreakService.cachedFind(playerName, uuid);
             int currentStreak = snapshot == null ? 0 : snapshot.getStreak();
             int nextReward = voteStreakService == null ? 0 : voteStreakService.nextRewardMilestone(currentStreak);
             return nextReward <= 0 ? notAvailable() : String.valueOf(nextReward);

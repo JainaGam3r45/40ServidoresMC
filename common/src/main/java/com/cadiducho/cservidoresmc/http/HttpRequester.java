@@ -9,8 +9,11 @@ import java.net.HttpURLConnection;
 import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class HttpRequester {
+
+    private static final long MAX_RETRY_BACKOFF_MILLIS = 5000L;
 
     public String get(URL url, String requestName, HttpConfig config, HttpLogger logger) throws IOException {
         return request(url, "GET", requestName, config, logger);
@@ -108,13 +111,21 @@ public class HttpRequester {
 
     private void sleepBeforeRetry(HttpConfig config, int attempt) throws InterruptedIOException {
         try {
-            Thread.sleep((long) config.getRetryBackoff() * attempt);
+            Thread.sleep(retryDelayMillis(config, attempt));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             InterruptedIOException interrupted = new InterruptedIOException("HTTP retry interrupted.");
             interrupted.initCause(e);
             throw interrupted;
         }
+    }
+
+    long retryDelayMillis(HttpConfig config, int attempt) {
+        long baseDelay = config.getRetryBackoff();
+        long exponential = baseDelay * (1L << Math.min(10, Math.max(0, attempt - 1)));
+        long capped = Math.min(MAX_RETRY_BACKOFF_MILLIS, exponential);
+        long jitter = ThreadLocalRandom.current().nextLong(baseDelay + 1L);
+        return Math.min(MAX_RETRY_BACKOFF_MILLIS, capped + jitter);
     }
 
     private String bodySummary(String body) {

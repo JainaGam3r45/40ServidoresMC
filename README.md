@@ -92,3 +92,16 @@ QA manual con PlaceholderAPI
 3. Ejecuta placeholders antes de votar para comprobar los fallbacks.
 4. Ejecuta `/stats40` para poblar la caché de estadísticas y vuelve a consultar los placeholders del servidor.
 5. Ejecuta el flujo de `/voto40` y revisa los placeholders de jugador, racha y recompensa pendiente.
+
+Build reproducible
+------------
+El proyecto genera bytecode Java 8 (`sourceCompatibility` y `targetCompatibility` en `1.8`) para mantener compatibilidad con servidores antiguos. Para compilar de forma reproducible usa un JDK LTS compatible con Gradle 8.0 y el plugin Lombok actual; JDK 17 es la opción recomendada para CI y desarrollo local.
+
+JDK 21 no es compatible con la versión actual de `io.freefair.lombok` usada por el proyecto y puede fallar durante la compilación con errores internos de `javac`. Si se quiere compilar oficialmente con JDK 21, actualiza el plugin Lombok en un cambio independiente y valida todos los módulos antes de mezclar cambios funcionales.
+
+Comandos de validación:
+
+```
+./gradlew clean test --no-daemon
+./gradlew clean test shadowJar --no-daemon
+```

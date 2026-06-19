@@ -23,6 +23,7 @@ public class MetricsCMD extends CSCommand {
         sender.sendMessageWithTag("&bPeticiones API: &6" + metrics.getApiRequests());
         sender.sendMessageWithTag("&bFallos API: &6" + metrics.getApiFailures());
         sender.sendMessageWithTag("&bReintentos: &6" + metrics.getRetries());
+        sender.sendMessageWithTag("&bRechazos HTTP: &6" + metrics.getHttpRejections());
         sender.sendMessageWithTag("&bComprobaciones de voto: &6" + metrics.getVoteChecks());
         sender.sendMessageWithTag("&bRecompensas entregadas: &6" + metrics.getRewardsDelivered());
 

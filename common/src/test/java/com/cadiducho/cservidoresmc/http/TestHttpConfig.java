@@ -28,7 +28,7 @@ public class TestHttpConfig {
 
         assertEquals(5000, httpConfig.getReadTimeout());
         assertEquals(6000, httpConfig.getConnectTimeout());
-        assertEquals(7, httpConfig.getRetries());
+        assertEquals(HttpConfig.MAX_RETRIES, httpConfig.getRetries());
         assertEquals(800, httpConfig.getRetryBackoff());
     }
 
@@ -44,8 +44,15 @@ public class TestHttpConfig {
 
         assertEquals(5000, httpConfig.getReadTimeout());
         assertEquals(6000, httpConfig.getConnectTimeout());
-        assertEquals(7, httpConfig.getRetries());
+        assertEquals(HttpConfig.MAX_RETRIES, httpConfig.getRetries());
         assertEquals(800, httpConfig.getRetryBackoff());
+    }
+
+    @Test
+    void capsRetriesFromConstructor() {
+        HttpConfig httpConfig = new HttpConfig(5000, 5000, 100, 250);
+
+        assertEquals(HttpConfig.MAX_RETRIES, httpConfig.getRetries());
     }
 
     private static class TestConfiguration implements CSConfiguration {

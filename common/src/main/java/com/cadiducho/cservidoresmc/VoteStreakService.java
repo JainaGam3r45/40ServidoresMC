@@ -20,13 +20,17 @@ public class VoteStreakService {
 
     public VoteStreakService(CSPlugin plugin) {
         this(plugin,
-                plugin.getPluginDataFolder(),
+                playerVoteStore(plugin),
                 () -> LocalDate.now(ZoneId.systemDefault()));
     }
 
     VoteStreakService(CSPlugin plugin, File dataPath, Supplier<LocalDate> currentDay) {
+        this(plugin, new PlayerVoteStore(dataFolder(dataPath), plugin), currentDay);
+    }
+
+    VoteStreakService(CSPlugin plugin, PlayerVoteStore store, Supplier<LocalDate> currentDay) {
         this.plugin = plugin;
-        this.store = new PlayerVoteStore(dataFolder(dataPath), plugin);
+        this.store = store;
         this.currentDay = currentDay;
     }
 
@@ -45,6 +49,14 @@ public class VoteStreakService {
 
     public VoteStreakStore.Snapshot find(String player) {
         return store.findStreak(player);
+    }
+
+    public VoteStreakStore.Snapshot cachedFind(String player, String uuid) {
+        return store.cachedStreak(player, uuid);
+    }
+
+    public void requestLoad(String player, String uuid) {
+        store.requestLoad(player, uuid);
     }
 
     public boolean reset(String player) {
@@ -110,5 +122,10 @@ public class VoteStreakService {
 
     private static File dataFolder(File dataPath) {
         return dataPath.getName().endsWith(".properties") ? dataPath.getParentFile() : dataPath;
+    }
+
+    private static PlayerVoteStore playerVoteStore(CSPlugin plugin) {
+        PlayerVoteStore store = plugin.getPlayerVoteStore();
+        return store == null ? new PlayerVoteStore(plugin.getPluginDataFolder(), plugin) : store;
     }
 }

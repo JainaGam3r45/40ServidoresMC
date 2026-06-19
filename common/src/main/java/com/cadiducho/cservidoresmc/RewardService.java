@@ -33,19 +33,23 @@ public class RewardService {
 
     public RewardService(CSPlugin plugin) {
         this(plugin,
-                plugin.getPluginDataFolder(),
+                playerVoteStore(plugin),
                 new ScheduledRewardScheduler(),
                 () -> new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(new Date()),
                 System::currentTimeMillis);
     }
 
     RewardService(CSPlugin plugin, File dataPath, RewardScheduler scheduler, Supplier<String> currentDate) {
-        this(plugin, dataFolder(dataPath), scheduler, currentDate, System::currentTimeMillis);
+        this(plugin, new PlayerVoteStore(dataFolder(dataPath), plugin), scheduler, currentDate, System::currentTimeMillis);
     }
 
     RewardService(CSPlugin plugin, File dataFolder, RewardScheduler scheduler, Supplier<String> currentDate, Supplier<Long> clock) {
+        this(plugin, new PlayerVoteStore(dataFolder, plugin), scheduler, currentDate, clock);
+    }
+
+    RewardService(CSPlugin plugin, PlayerVoteStore playerVoteStore, RewardScheduler scheduler, Supplier<String> currentDate, Supplier<Long> clock) {
         this.plugin = plugin;
-        this.playerVoteStore = new PlayerVoteStore(dataFolder, plugin);
+        this.playerVoteStore = playerVoteStore;
         this.scheduler = scheduler;
         this.currentDate = currentDate;
         this.clock = clock;
@@ -53,7 +57,7 @@ public class RewardService {
 
     public void handleVoteResponse(String player, CSCommandSender sender, VoteResponse voteResponse) {
         if (voteResponse == null || voteResponse.getStatus() == null) {
-            sender.sendMessageWithTag("&7Ha ocurrido un error. Prueba más tarde o avisa a un adminsitrador");
+            sendMessage(sender, "&7Ha ocurrido un error. Prueba más tarde o avisa a un adminsitrador");
             return;
         }
 
@@ -65,7 +69,7 @@ public class RewardService {
                 if (sendAlreadyRewardedIfActive(sender)) {
                     return;
                 }
-                sender.sendNotVotedTodayLink("&6No has votado hoy! Puedes hacerlo en &a ", web);
+                plugin.runSyncIfActive(() -> sender.sendNotVotedTodayLink("&6No has votado hoy! Puedes hacerlo en &a ", web));
                 scheduleAutoReward(player, sender);
                 break;
             case SUCCESS:
@@ -75,13 +79,13 @@ public class RewardService {
                 markRewarded(sender);
                 recordVote(sender);
                 invalidateVoteCaches(player);
-                sender.sendMessageWithTag("&aGracias por votar, pero ya has obtenido tu premio!");
+                sendMessage(sender, "&aGracias por votar, pero ya has obtenido tu premio!");
                 break;
             case INVALID_kEY:
-                sender.sendMessageWithTag("&cClave incorrecta. Entra en &bhttps://40servidoresmc.es/miservidor.php &cy cambia esta.");
+                sendMessage(sender, "&cClave incorrecta. Entra en &bhttps://40servidoresmc.es/miservidor.php &cy cambia esta.");
                 break;
             default:
-                sender.sendMessageWithTag("&7Ha ocurrido un error. Prueba más tarde o avisa a un adminsitrador");
+                sendMessage(sender, "&7Ha ocurrido un error. Prueba más tarde o avisa a un adminsitrador");
                 break;
         }
     }
@@ -95,7 +99,7 @@ public class RewardService {
         String date = currentDate.get();
         PlayerVoteStore.MarkResult markResult = playerVoteStore.markRewarded(sender, date, clock.get());
         if (markResult == PlayerVoteStore.MarkResult.FAILED) {
-            sender.sendMessageWithTag("&cNo se pudo registrar tu voto premiado. Avisa a un administrador.");
+            sendMessage(sender, "&cNo se pudo registrar tu voto premiado. Avisa a un administrador.");
             return false;
         }
 
@@ -111,7 +115,7 @@ public class RewardService {
         recordVote(sender);
         recordStreak(sender);
         invalidateVoteCaches(player);
-        sender.sendMessageWithTag(plugin.getCSConfiguration().getString("messages.voteClaim", "mensaje", ""));
+        sendMessage(sender, plugin.getCSConfiguration().getString("messages.voteClaim", "mensaje", ""));
 
         for (String command : plugin.getCSConfiguration().customCommandsList()) {
             String parsedCommand = PlayerPlaceholders.applyPlayer(command, player);
@@ -140,8 +144,13 @@ public class RewardService {
         return playerVoteStore.hasRewardedOnDate(sender, currentDate.get()) && nextVoteInMillis(sender) > 0L;
     }
 
+    public boolean hasCachedActiveReward(String player, String uuid) {
+        return playerVoteStore.cachedRewardedOnDate(player, uuid, currentDate.get())
+                && cachedNextVoteInMillis(player, uuid) > 0L;
+    }
+
     public boolean sendAlreadyRewardedIfActive(CSCommandSender sender) {
-        if (!hasActiveReward(sender)) {
+        if (!hasCachedActiveReward(sender.getName(), sender.getUniqueId())) {
             return false;
         }
         sendAlreadyRewardedMessage(sender);
@@ -179,12 +188,20 @@ public class RewardService {
         debug("Recheck " + attempt + " para " + player + " en " + delay + " segundos.");
 
         scheduler.schedule(() -> {
+            if (!plugin.isActive()) {
+                finishRechecks(pendingKey);
+                return;
+            }
             plugin.getApiClient().invalidateVoteCache(player);
             plugin.getApiClient().validateVote(player).thenAccept(voteResponse -> {
+                if (!plugin.isActive()) {
+                    finishRechecks(pendingKey);
+                    return;
+                }
                 handleRecheckResponse(player, sender, voteResponse, attempt, pendingKey);
             }).exceptionally(e -> {
                 debug("Recheck " + attempt + " falló para " + player + ": " + e.getMessage());
-                if (attempt < maxAttempts()) {
+                if (plugin.isActive() && attempt < maxAttempts()) {
                     scheduleAttempt(player, sender, attempt + 1, pendingKey);
                 } else {
                     finishRechecks(pendingKey);
@@ -279,9 +296,22 @@ public class RewardService {
         return Math.max(0L, VoteReminderService.VOTE_COOLDOWN_MILLIS - (clock.get() - lastVoteAt));
     }
 
+    private long cachedNextVoteInMillis(String player, String uuid) {
+        long lastVoteAt = playerVoteStore.cachedLastVoteAt(player, uuid);
+        if (lastVoteAt <= 0L) {
+            return -1L;
+        }
+        return Math.max(0L, VoteReminderService.VOTE_COOLDOWN_MILLIS - (clock.get() - lastVoteAt));
+    }
+
     private void sendAlreadyRewardedMessage(CSCommandSender sender) {
         String message = plugin.getCSConfiguration().getString("messages.alreadyRewarded", "alreadyRewardedMessage", DEFAULT_ALREADY_REWARDED_MESSAGE);
-        sender.sendMessageWithTag(message.replace("%time%", VoteTimeFormatter.formatDuration(nextVoteInMillis(sender))));
+        long nextVoteIn = cachedNextVoteInMillis(sender.getName(), sender.getUniqueId());
+        if (nextVoteIn < 0L) {
+            nextVoteIn = nextVoteInMillis(sender);
+        }
+        long timeLeft = nextVoteIn;
+        sendMessage(sender, message.replace("%time%", VoteTimeFormatter.formatDuration(timeLeft)));
     }
 
     private String rewardKey(String player, String date) {
@@ -292,10 +322,19 @@ public class RewardService {
         return dataPath.getName().endsWith(".properties") ? dataPath.getParentFile() : dataPath;
     }
 
+    private static PlayerVoteStore playerVoteStore(CSPlugin plugin) {
+        PlayerVoteStore store = plugin.getPlayerVoteStore();
+        return store == null ? new PlayerVoteStore(plugin.getPluginDataFolder(), plugin) : store;
+    }
+
     private void debug(String message) {
         if (plugin.getCSConfiguration().getBoolean("autoReward.debug", false) || plugin.isDebug()) {
             plugin.log("[AutoReward] " + message);
         }
+    }
+
+    private void sendMessage(CSCommandSender sender, String message) {
+        plugin.runSyncIfActive(() -> sender.sendMessageWithTag(message));
     }
 
     interface RewardScheduler {

@@ -28,14 +28,18 @@ public class VoteReminderService {
 
     public VoteReminderService(CSPlugin plugin) {
         this(plugin,
-                plugin.getPluginDataFolder(),
+                playerVoteStore(plugin),
                 new ScheduledReminderScheduler(),
                 System::currentTimeMillis);
     }
 
     VoteReminderService(CSPlugin plugin, File dataPath, ReminderScheduler scheduler, Supplier<Long> clock) {
+        this(plugin, new PlayerVoteStore(dataFolder(dataPath), plugin), scheduler, clock);
+    }
+
+    VoteReminderService(CSPlugin plugin, PlayerVoteStore store, ReminderScheduler scheduler, Supplier<Long> clock) {
         this.plugin = plugin;
-        this.store = new PlayerVoteStore(dataFolder(dataPath), plugin);
+        this.store = store;
         this.scheduler = scheduler;
         this.clock = clock;
     }
@@ -61,6 +65,10 @@ public class VoteReminderService {
         return store.lastVoteAt(player);
     }
 
+    public long cachedLastVoteAt(String player, String uuid) {
+        return store.cachedLastVoteAt(player, uuid);
+    }
+
     public boolean canVote(String player) {
         long lastVoteAt = lastVoteAt(player);
         return lastVoteAt > 0L && nextVoteInMillis(player) <= 0L;
@@ -73,6 +81,24 @@ public class VoteReminderService {
         }
 
         return Math.max(0L, VOTE_COOLDOWN_MILLIS - (clock.get() - lastVoteAt));
+    }
+
+    public long cachedNextVoteInMillis(String player, String uuid) {
+        long lastVoteAt = cachedLastVoteAt(player, uuid);
+        if (lastVoteAt <= 0L) {
+            return -1L;
+        }
+
+        return Math.max(0L, VOTE_COOLDOWN_MILLIS - (clock.get() - lastVoteAt));
+    }
+
+    public boolean cachedCanVote(String player, String uuid) {
+        long lastVoteAt = cachedLastVoteAt(player, uuid);
+        return lastVoteAt > 0L && cachedNextVoteInMillis(player, uuid) <= 0L;
+    }
+
+    public void requestLoad(String player, String uuid) {
+        store.requestLoad(player, uuid);
     }
 
     void recordVote(String player, long votedAt) {
@@ -151,8 +177,13 @@ public class VoteReminderService {
         return (player == null ? "" : player).toLowerCase(Locale.ROOT);
     }
 
-    private File dataFolder(File dataPath) {
+    private static File dataFolder(File dataPath) {
         return dataPath.getName().endsWith(".properties") ? dataPath.getParentFile() : dataPath;
+    }
+
+    private static PlayerVoteStore playerVoteStore(CSPlugin plugin) {
+        PlayerVoteStore store = plugin.getPlayerVoteStore();
+        return store == null ? new PlayerVoteStore(plugin.getPluginDataFolder(), plugin) : store;
     }
 
     private void debug(String message) {

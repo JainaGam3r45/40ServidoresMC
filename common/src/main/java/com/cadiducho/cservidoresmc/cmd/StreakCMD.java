@@ -8,6 +8,7 @@ import com.cadiducho.cservidoresmc.api.CSPlugin;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.RejectedExecutionException;
 
 public class StreakCMD extends CSCommand {
 
@@ -34,16 +35,18 @@ public class StreakCMD extends CSCommand {
         String player = args.get(1);
 
         if (Arrays.asList("ver", "view").contains(action)) {
-            sendStreak(sender, service.find(player), player);
+            VoteStreakStore.Snapshot snapshot = service.cachedFind(player, "");
+            if (snapshot == null) {
+                service.requestLoad(player, "");
+                sender.sendMessageWithTag("&eLos datos de racha de &6" + player + " &ese están cargando. Inténtalo de nuevo en unos segundos.");
+                return CommandResult.SUCCESS;
+            }
+            sendStreak(sender, snapshot, player);
             return CommandResult.SUCCESS;
         }
 
         if (Arrays.asList("reset", "reiniciar").contains(action)) {
-            if (service.reset(player)) {
-                sender.sendMessageWithTag("&aRacha de &e" + player + " &areiniciada correctamente.");
-            } else {
-                sender.sendMessageWithTag("&cNo se pudo reiniciar la racha de &e" + player + "&c.");
-            }
+            resetAsync(plugin, sender, service, player);
             return CommandResult.SUCCESS;
         }
 
@@ -62,6 +65,24 @@ public class StreakCMD extends CSCommand {
 
     private String emptyValue(String value) {
         return value == null || value.isEmpty() ? "ninguno" : value;
+    }
+
+    private void resetAsync(CSPlugin plugin, CSCommandSender sender, VoteStreakService service, String player) {
+        try {
+            plugin.getAsyncExecutor().execute(() -> {
+                boolean reset = service.reset(player);
+                plugin.runSyncIfActive(() -> {
+                    if (reset) {
+                        sender.sendMessageWithTag("&aRacha de &e" + player + " &areiniciada correctamente.");
+                    } else {
+                        sender.sendMessageWithTag("&cNo se pudo reiniciar la racha de &e" + player + "&c.");
+                    }
+                });
+            });
+        } catch (RejectedExecutionException ex) {
+            sender.sendMessageWithTag("&cEl servicio está ocupado. Inténtalo de nuevo en unos segundos.");
+            plugin.logError("No se pudo encolar el reinicio de racha: " + ex.getMessage());
+        }
     }
 
     private void sendHelp(CSCommandSender sender) {

@@ -1,0 +1,158 @@
+package com.cadiducho.cservidoresmc;
+
+import com.cadiducho.cservidoresmc.api.CSCommandSender;
+import com.cadiducho.cservidoresmc.api.CSPlugin;
+import com.cadiducho.cservidoresmc.cmd.CSCommand;
+import com.cadiducho.cservidoresmc.cmd.StatsCMD;
+import com.cadiducho.cservidoresmc.config.CSConfiguration;
+import com.cadiducho.cservidoresmc.model.ServerStats;
+import com.google.gson.Gson;
+import org.junit.jupiter.api.Test;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+public class TestStatsCommand {
+
+    @Test
+    void emptyRecentVotesDoesNotThrow() {
+        TestPlugin plugin = new TestPlugin();
+        TestSender sender = new TestSender();
+        ServerStats stats = new ServerStats();
+        stats.setServerName("Servidor");
+        stats.setLastVotes(Collections.emptyList());
+        plugin.apiClient = new TestApiClient(plugin, stats);
+
+        CSCommand.CommandResult result = new StatsCMD().execute(plugin, sender, "stats40", Collections.emptyList());
+
+        assertEquals(CSCommand.CommandResult.SUCCESS, result);
+        assertEquals(5, sender.messages.size());
+    }
+
+    @Test
+    void completedStatsAreIgnoredAfterShutdown() {
+        TestPlugin plugin = new TestPlugin();
+        plugin.active = false;
+        TestSender sender = new TestSender();
+        ServerStats stats = new ServerStats();
+        stats.setServerName("Servidor");
+        stats.setLastVotes(Collections.emptyList());
+        plugin.apiClient = new TestApiClient(plugin, stats);
+
+        new StatsCMD().execute(plugin, sender, "stats40", Collections.emptyList());
+
+        assertEquals(0, sender.messages.size());
+    }
+
+    private static class TestApiClient extends ApiClient {
+
+        private final ServerStats stats;
+
+        private TestApiClient(CSPlugin plugin, ServerStats stats) {
+            super(plugin, new Gson());
+            this.stats = stats;
+        }
+
+        @Override
+        public CompletableFuture<ServerStats> fetchServerStats() {
+            return CompletableFuture.completedFuture(stats);
+        }
+    }
+
+    private static class TestSender implements CSCommandSender {
+
+        private final List<String> messages = new ArrayList<>();
+
+        @Override
+        public String TAG() {
+            return "";
+        }
+
+        @Override
+        public void sendMessage(String message) {
+            messages.add(message);
+        }
+
+        @Override
+        public String getName() {
+            return "Cadiducho";
+        }
+
+        @Override
+        public boolean hasPermission(String permission) {
+            return true;
+        }
+    }
+
+    private static class TestPlugin implements CSPlugin {
+
+        private ApiClient apiClient;
+        private boolean active = true;
+        private final PluginMetrics metrics = new PluginMetrics();
+
+        @Override
+        public void log(String text) {
+        }
+
+        @Override
+        public void logError(String text) {
+        }
+
+        @Override
+        public void registerCommands() {
+        }
+
+        @Override
+        public CSConfiguration getCSConfiguration() {
+            return null;
+        }
+
+        @Override
+        public ApiClient getApiClient() {
+            return apiClient;
+        }
+
+        @Override
+        public boolean isActive() {
+            return active;
+        }
+
+        @Override
+        public RewardService getRewardService() {
+            return null;
+        }
+
+        @Override
+        public File getPluginDataFolder() {
+            return new File(".");
+        }
+
+        @Override
+        public Updater getUpdater() {
+            return null;
+        }
+
+        @Override
+        public PluginMetrics getPluginMetrics() {
+            return metrics;
+        }
+
+        @Override
+        public String getPluginVersion() {
+            return "test";
+        }
+
+        @Override
+        public void dispatchCommand(String command) {
+        }
+
+        @Override
+        public void broadcastMessage(String message) {
+        }
+    }
+}

@@ -2,6 +2,7 @@ package com.cadiducho.cservidoresmc.api;
 
 import com.cadiducho.cservidoresmc.ApiClient;
 import com.cadiducho.cservidoresmc.PluginMetrics;
+import com.cadiducho.cservidoresmc.PlayerVoteStore;
 import com.cadiducho.cservidoresmc.RewardService;
 import com.cadiducho.cservidoresmc.Updater;
 import com.cadiducho.cservidoresmc.VoteReminderService;
@@ -11,6 +12,8 @@ import com.cadiducho.cservidoresmc.config.CSConfiguration;
 import java.io.File;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ForkJoinPool;
 
 public interface CSPlugin {
 
@@ -25,6 +28,14 @@ public interface CSPlugin {
         if (isDebug()){
             log("[Debug] " + s);
         }
+    }
+
+    default boolean isActive() {
+        return true;
+    }
+
+    default Executor getAsyncExecutor() {
+        return ForkJoinPool.commonPool();
     }
 
     /**
@@ -96,6 +107,10 @@ public interface CSPlugin {
      */
     File getPluginDataFolder();
 
+    default PlayerVoteStore getPlayerVoteStore() {
+        return null;
+    }
+
     default void shutdownRewardService() {
         RewardService rewardService = getRewardService();
         if (rewardService != null) {
@@ -157,6 +172,17 @@ public interface CSPlugin {
      */
     default void runSync(Runnable task) {
         task.run();
+    }
+
+    default void runSyncIfActive(Runnable task) {
+        if (!isActive()) {
+            return;
+        }
+        runSync(() -> {
+            if (isActive()) {
+                task.run();
+            }
+        });
     }
 
     /**

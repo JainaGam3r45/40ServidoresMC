@@ -4,6 +4,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class Cooldown {
 
+    private static final int CLEANUP_THRESHOLD = 1024;
+
     private final int time;
     private final ConcurrentHashMap<String, Long> cooldowns;
 
@@ -36,6 +38,9 @@ public class Cooldown {
     }
 
     public void setOnCooldown(String player) {
+        if (getCooldowns().size() > CLEANUP_THRESHOLD) {
+            cleanup();
+        }
         getCooldowns().put(player, System.currentTimeMillis() + (getTime() * 1000L));
     }
 

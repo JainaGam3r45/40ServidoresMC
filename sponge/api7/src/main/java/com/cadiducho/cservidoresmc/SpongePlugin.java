@@ -5,6 +5,8 @@ import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.api.CSPlugin;
 import com.cadiducho.cservidoresmc.cmd.*;
 import com.cadiducho.cservidoresmc.config.CSConfiguration;
+import com.cadiducho.cservidoresmc.BoundedTaskExecutor;
+import com.cadiducho.cservidoresmc.PlayerVoteStore;
 import com.google.gson.Gson;
 import com.google.inject.Inject;
 import org.bstats.sponge.Metrics;
@@ -20,6 +22,7 @@ import org.spongepowered.api.event.game.state.GameStartedServerEvent;
 import org.spongepowered.api.event.game.state.GameStoppedServerEvent;
 import org.spongepowered.api.plugin.Plugin;
 import org.spongepowered.api.text.Text;
+import org.spongepowered.api.text.format.TextColors;
 import org.spongepowered.api.text.serializer.TextSerializers;
 
 import java.io.File;
@@ -29,11 +32,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executor;
 
 @Plugin(id = "cservidoresmc", name = "40ServidoresMC", version = SpongePlugin.PLUGIN_VERSION)
 public class SpongePlugin implements CSPlugin {
 
-    public static final String PLUGIN_VERSION = "3.0.2";
+    public static final String PLUGIN_VERSION = "3.2.0";
     @Inject private Logger logger;
     @Inject private Game game;
 
@@ -45,7 +49,10 @@ public class SpongePlugin implements CSPlugin {
     private RewardService rewardService;
     private VoteReminderService voteReminderService;
     private VoteStreakService voteStreakService;
+    private PlayerVoteStore playerVoteStore;
     private CSConfiguration csConfiguration;
+    private BoundedTaskExecutor asyncExecutor;
+    private volatile boolean active;
 
     @Inject
     @ConfigDir(sharedRoot = false)
@@ -68,22 +75,31 @@ public class SpongePlugin implements CSPlugin {
 
     @Listener
     public void onServerStart(GameStartedServerEvent event) {
-        apiClient = new ApiClient(this, new Gson());
-        new LegacyPlayerDataMigrator(this, getPluginDataFolder()).migrate();
+        active = true;
+        asyncExecutor = new BoundedTaskExecutor("40servidoresmc-http", pluginMetrics, this::logError);
+        apiClient = new ApiClient(this, new Gson(), asyncExecutor);
+        playerVoteStore = new PlayerVoteStore(getPluginDataFolder(), this);
+        new LegacyPlayerDataMigrator(this, getPluginDataFolder(), playerVoteStore).migrate();
         voteReminderService = new VoteReminderService(this);
         voteStreakService = new VoteStreakService(this);
         rewardService = new RewardService(this);
         voteReminderService.start();
+        playerVoteStore.warmUp(getOnlinePlayers());
         updater = new Updater(this, getPluginVersion(), this.game.getPlatform().getMinecraftVersion().getName());
         updater.checkearVersion(new CSConsoleSender(this));
 
         checkDefaultKey();
+        printStartupInfo();
     }
 
     @Listener
     public void onServerStop(GameStoppedServerEvent event) {
+        active = false;
         shutdownVoteReminderService();
         shutdownRewardService();
+        if (asyncExecutor != null) {
+            asyncExecutor.shutdownNow();
+        }
     }
 
     private Path resolveConfig() {
@@ -133,6 +149,21 @@ public class SpongePlugin implements CSPlugin {
         return apiClient;
     }
 
+    private void printStartupInfo() {
+        Sponge.getServer().getConsole().sendMessage(Text.EMPTY);
+        Sponge.getServer().getConsole().sendMessage(Text.of(
+                TextColors.AQUA, "  40  ",
+                TextColors.WHITE, "40ServidoresMC ",
+                TextColors.GRAY, "v" + getPluginVersion()));
+        Sponge.getServer().getConsole().sendMessage(Text.of(
+                TextColors.AQUA, "      ",
+                TextColors.DARK_GRAY, "Running on Sponge - " + game.getPlatform().getMinecraftVersion().getName()));
+        Sponge.getServer().getConsole().sendMessage(Text.of(
+                TextColors.AQUA, "      ",
+                TextColors.DARK_GRAY, "Reescrito por JainaGam3r45"));
+        Sponge.getServer().getConsole().sendMessage(Text.EMPTY);
+    }
+
     @Override
     public RewardService getRewardService() {
         return rewardService;
@@ -149,6 +180,11 @@ public class SpongePlugin implements CSPlugin {
     }
 
     @Override
+    public PlayerVoteStore getPlayerVoteStore() {
+        return playerVoteStore;
+    }
+
+    @Override
     public File getPluginDataFolder() {
         return configDirectory.toFile();
     }
@@ -161,6 +197,16 @@ public class SpongePlugin implements CSPlugin {
     @Override
     public PluginMetrics getPluginMetrics() {
         return pluginMetrics;
+    }
+
+    @Override
+    public boolean isActive() {
+        return active;
+    }
+
+    @Override
+    public Executor getAsyncExecutor() {
+        return asyncExecutor == null ? CSPlugin.super.getAsyncExecutor() : asyncExecutor;
     }
 
     @Override
@@ -199,6 +245,6 @@ public class SpongePlugin implements CSPlugin {
 
     @Override
     public void broadcastMessage(String message) {
-        Sponge.getServer().getBroadcastChannel().send(TextSerializers.FORMATTING_CODE.deserialize(message));
+        runSync(() -> Sponge.getServer().getBroadcastChannel().send(TextSerializers.FORMATTING_CODE.deserialize(message)));
     }
 }

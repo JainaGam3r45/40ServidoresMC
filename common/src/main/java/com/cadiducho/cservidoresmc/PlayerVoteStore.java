@@ -13,196 +13,270 @@ import java.nio.file.Files;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Executor;
+import java.util.function.Function;
 
 public class PlayerVoteStore {
 
     private static final String YAML_EXTENSION = ".yml";
+    private static final int MAX_CACHED_PLAYERS = 4096;
 
     private final File playersFolder;
     private final CSPlugin plugin;
-    private final Map<String, String> namesByUuid = new HashMap<>();
-    private final Map<String, String> uuidsByName = new HashMap<>();
+    private final Executor loaderExecutor;
+    private final ConcurrentMap<String, PlayerVoteData> playersByUuid = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, String> uuidsByName = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, CompletableFuture<Void>> pendingLoads = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, CompletableFuture<Void>> writeTails = new ConcurrentHashMap<>();
 
     public PlayerVoteStore(File dataFolder, CSPlugin plugin) {
-        this(new File(dataFolder, "players"), plugin, true);
+        this(new File(dataFolder, "players"), plugin, true, plugin == null ? null : plugin.getAsyncExecutor());
     }
 
     PlayerVoteStore(File folder, CSPlugin plugin, boolean directPlayersFolder) {
+        this(folder, plugin, directPlayersFolder, plugin == null ? null : plugin.getAsyncExecutor());
+    }
+
+    PlayerVoteStore(File folder, CSPlugin plugin, boolean directPlayersFolder, Executor loaderExecutor) {
         this.playersFolder = directPlayersFolder ? folder : new File(folder, "players");
         this.plugin = plugin;
+        this.loaderExecutor = loaderExecutor == null ? Runnable::run : loaderExecutor;
         ensurePlayersFolder();
-        rebuildNameIndex();
     }
 
-    public synchronized MarkResult markRewarded(CSCommandSender sender, String rewardDate, long rewardedAt) {
-        PlayerVoteData player = load(sender);
-        if (!player.hasUuid()) {
-            return MarkResult.FAILED;
-        }
-        if (rewardDate.equals(player.lastRewardDate)) {
-            return MarkResult.DUPLICATE;
-        }
-
-        PlayerVoteData previous = player.copy();
-        player.lastVoteAt = Math.max(player.lastVoteAt, rewardedAt);
-        player.lastRewardAt = Math.max(player.lastRewardAt, rewardedAt);
-        player.lastRewardDate = rewardDate;
-        if (!save(player)) {
-            save(previous);
-            return MarkResult.FAILED;
-        }
-        return MarkResult.MARKED;
+    public MarkResult markRewarded(CSCommandSender sender, String rewardDate, long rewardedAt) {
+        return markRewarded(sender.getName(), sender.getUniqueId(), rewardDate, rewardedAt, true);
     }
 
-    public synchronized boolean markRewarded(String playerName, String rewardDate, long rewardedAt) {
-        PlayerVoteData player = loadByName(playerName);
-        if (!player.hasUuid()) {
-            return false;
-        }
-        player.name = preferName(player.name, playerName);
-        player.lastVoteAt = Math.max(player.lastVoteAt, rewardedAt);
-        player.lastRewardAt = Math.max(player.lastRewardAt, rewardedAt);
-        player.lastRewardDate = rewardDate;
-        return save(player);
+    public boolean markRewarded(String playerName, String rewardDate, long rewardedAt) {
+        return markRewarded(playerName, "", rewardDate, rewardedAt, false) != MarkResult.FAILED;
     }
 
-    public synchronized boolean recordVote(CSCommandSender sender, long votedAt) {
-        PlayerVoteData player = load(sender);
-        if (!player.hasUuid()) {
-            return false;
-        }
-        player.lastVoteAt = Math.max(player.lastVoteAt, votedAt);
-        return save(player);
+    public boolean recordVote(CSCommandSender sender, long votedAt) {
+        return recordVote(sender.getName(), sender.getUniqueId(), votedAt);
     }
 
-    public synchronized boolean recordVote(String playerName, long votedAt) {
-        PlayerVoteData player = loadByName(playerName);
-        if (!player.hasUuid()) {
-            return false;
-        }
-        player.name = preferName(player.name, playerName);
-        player.lastVoteAt = Math.max(player.lastVoteAt, votedAt);
-        return save(player);
+    public boolean recordVote(String playerName, long votedAt) {
+        return recordVote(playerName, "", votedAt);
     }
 
-    public synchronized long lastVoteAt(String playerName) {
+    public long lastVoteAt(String playerName) {
         return loadByName(playerName).lastVoteAt;
     }
 
-    public synchronized long lastVoteAt(CSCommandSender sender) {
+    public long lastVoteAt(CSCommandSender sender) {
         return load(sender).lastVoteAt;
     }
 
-    public synchronized boolean wasRemindedFor(String playerName, long voteCycle) {
+    public long cachedLastVoteAt(String playerName, String uuid) {
+        PlayerVoteData player = cachedPlayer(playerName, uuid);
+        return player == null ? 0L : player.lastVoteAt;
+    }
+
+    public boolean wasRemindedFor(String playerName, long voteCycle) {
         return loadByName(playerName).lastReminderAt == voteCycle;
     }
 
-    public synchronized boolean markReminded(String playerName, long voteCycle) {
-        PlayerVoteData player = loadByName(playerName);
-        if (!player.hasUuid()) {
-            return false;
-        }
-        player.lastReminderAt = voteCycle;
-        return save(player);
-    }
-
-    public synchronized boolean hasRewardedOnDate(CSCommandSender sender, String rewardDate) {
-        PlayerVoteData player = load(sender);
-        return rewardDate.equals(player.lastRewardDate);
-    }
-
-    public synchronized VoteStreakStore.Snapshot recordStreak(String playerName, String uuid, LocalDate voteDay) {
-        PlayerVoteData player = load(playerName, uuid);
-        if (!player.hasUuid()) {
-            return new VoteStreakStore.Snapshot("", playerName, "", "", 0, 0, Collections.emptySet(), false);
-        }
-
-        String lastDay = player.lastVoteDay;
-        int currentStreak = player.currentStreak;
-        int bestStreak = Math.max(player.bestStreak, currentStreak);
-        Set<Integer> rewardedMilestones = new TreeSet<>(player.rewardedMilestones);
-        boolean sameDay = voteDay.toString().equals(lastDay);
-
-        if (!sameDay) {
-            if (isYesterday(lastDay, voteDay)) {
-                currentStreak++;
-            } else {
-                currentStreak = 1;
-                rewardedMilestones.clear();
+    public boolean markReminded(String playerName, long voteCycle) {
+        return updateByName(playerName, player -> {
+            if (!player.hasUuid()) {
+                return UpdateResult.failed(player);
             }
+            player.lastReminderAt = voteCycle;
+            return UpdateResult.saved(player);
+        }).saved;
+    }
+
+    public boolean hasRewardedOnDate(CSCommandSender sender, String rewardDate) {
+        PlayerVoteData cached = cachedPlayer(sender.getName(), sender.getUniqueId());
+        if (cached != null) {
+            return rewardDate.equals(cached.lastRewardDate);
         }
+        return load(sender).lastRewardDate.equals(rewardDate);
+    }
 
-        player.name = preferName(player.name, playerName);
-        player.uuid = normalizeUuid(uuid);
-        player.lastVoteDay = voteDay.toString();
-        player.currentStreak = currentStreak;
-        player.bestStreak = Math.max(bestStreak, currentStreak);
-        player.rewardedMilestones = rewardedMilestones;
+    public boolean cachedRewardedOnDate(String playerName, String uuid, String rewardDate) {
+        PlayerVoteData cached = cachedPlayer(playerName, uuid);
+        return cached != null && rewardDate.equals(cached.lastRewardDate);
+    }
 
-        boolean saved = save(player);
+    public VoteStreakStore.Snapshot recordStreak(String playerName, String uuid, LocalDate voteDay) {
+        UpdateResult result = update(playerName, uuid, player -> {
+            if (!player.hasUuid()) {
+                return UpdateResult.failed(player);
+            }
+
+            String lastDay = player.lastVoteDay;
+            int currentStreak = player.currentStreak;
+            int bestStreak = Math.max(player.bestStreak, currentStreak);
+            Set<Integer> rewardedMilestones = new TreeSet<>(player.rewardedMilestones);
+            boolean sameDay = voteDay.toString().equals(lastDay);
+
+            if (!sameDay) {
+                if (isYesterday(lastDay, voteDay)) {
+                    currentStreak++;
+                } else {
+                    currentStreak = 1;
+                    rewardedMilestones.clear();
+                }
+            }
+
+            player.name = preferName(player.name, playerName);
+            player.uuid = normalizeUuid(uuid);
+            player.lastVoteDay = voteDay.toString();
+            player.currentStreak = currentStreak;
+            player.bestStreak = Math.max(bestStreak, currentStreak);
+            player.rewardedMilestones = rewardedMilestones;
+            return UpdateResult.saved(player);
+        });
+
+        PlayerVoteData player = result.player;
         return new VoteStreakStore.Snapshot(player.key(), player.name, player.uuid, player.lastVoteDay,
-                player.currentStreak, player.bestStreak, player.rewardedMilestones, saved);
+                player.currentStreak, player.bestStreak, player.rewardedMilestones, result.saved);
     }
 
-    public synchronized VoteStreakStore.Snapshot findStreak(String playerName) {
+    public VoteStreakStore.Snapshot findStreak(String playerName) {
         PlayerVoteData player = loadByName(playerName);
-        return new VoteStreakStore.Snapshot(player.key(), player.name, player.uuid, player.lastVoteDay,
-                player.currentStreak, Math.max(player.bestStreak, player.currentStreak),
-                player.rewardedMilestones, true);
+        return snapshot(player, true);
     }
 
-    public synchronized boolean resetStreak(String playerName) {
-        PlayerVoteData player = loadByName(playerName);
-        if (!player.hasUuid()) {
-            return false;
-        }
-        player.lastVoteDay = "";
-        player.currentStreak = 0;
-        player.bestStreak = 0;
-        player.rewardedMilestones.clear();
-        return save(player);
+    public VoteStreakStore.Snapshot cachedStreak(String playerName, String uuid) {
+        PlayerVoteData player = cachedPlayer(playerName, uuid);
+        return player == null ? null : snapshot(player, true);
     }
 
-    public synchronized boolean markMilestoneRewarded(String key, int milestone) {
-        PlayerVoteData player = loadByKey(key);
-        if (!player.hasUuid() || player.rewardedMilestones.contains(milestone)) {
-            return false;
-        }
-        player.rewardedMilestones.add(milestone);
-        return save(player);
+    public boolean resetStreak(String playerName) {
+        return updateByName(playerName, player -> {
+            if (!player.hasUuid()) {
+                return UpdateResult.failed(player);
+            }
+            player.lastVoteDay = "";
+            player.currentStreak = 0;
+            player.bestStreak = 0;
+            player.rewardedMilestones.clear();
+            return UpdateResult.saved(player);
+        }).saved;
     }
 
-    public synchronized MergeResult mergeLegacy(LegacyPlayerData legacy) {
-        PlayerVoteData player = load(legacy.name, legacy.uuid);
-        if (!player.hasUuid()) {
+    public boolean markMilestoneRewarded(String key, int milestone) {
+        UpdateResult result = updateByKey(key, player -> {
+            if (!player.hasUuid() || player.rewardedMilestones.contains(milestone)) {
+                return UpdateResult.failed(player);
+            }
+            player.rewardedMilestones.add(milestone);
+            return UpdateResult.saved(player);
+        });
+        return result.saved;
+    }
+
+    public MergeResult mergeLegacy(LegacyPlayerData legacy) {
+        UpdateResult result = update(legacy.name, legacy.uuid, player -> {
+            if (!player.hasUuid()) {
+                return UpdateResult.unresolved(player);
+            }
+
+            player.name = preferName(player.name, legacy.name);
+            player.lastVoteAt = Math.max(player.lastVoteAt, legacy.lastVoteAt);
+            player.lastRewardAt = Math.max(player.lastRewardAt, legacy.lastRewardAt);
+            player.lastReminderAt = Math.max(player.lastReminderAt, legacy.lastReminderAt);
+            player.currentStreak = Math.max(player.currentStreak, legacy.currentStreak);
+            player.bestStreak = Math.max(Math.max(player.bestStreak, player.currentStreak), legacy.bestStreak);
+            if (isNewerDay(legacy.lastVoteDay, player.lastVoteDay)) {
+                player.lastVoteDay = legacy.lastVoteDay;
+            }
+            if (isNewerDay(legacy.lastRewardDate, player.lastRewardDate)) {
+                player.lastRewardDate = legacy.lastRewardDate;
+            }
+            player.rewardedMilestones.addAll(legacy.rewardedMilestones);
+            return UpdateResult.saved(player);
+        });
+
+        if (result.unresolved) {
             return MergeResult.UNRESOLVED;
         }
-
-        player.name = preferName(player.name, legacy.name);
-        player.lastVoteAt = Math.max(player.lastVoteAt, legacy.lastVoteAt);
-        player.lastRewardAt = Math.max(player.lastRewardAt, legacy.lastRewardAt);
-        player.lastReminderAt = Math.max(player.lastReminderAt, legacy.lastReminderAt);
-        player.currentStreak = Math.max(player.currentStreak, legacy.currentStreak);
-        player.bestStreak = Math.max(Math.max(player.bestStreak, player.currentStreak), legacy.bestStreak);
-        if (isNewerDay(legacy.lastVoteDay, player.lastVoteDay)) {
-            player.lastVoteDay = legacy.lastVoteDay;
-        }
-        if (isNewerDay(legacy.lastRewardDate, player.lastRewardDate)) {
-            player.lastRewardDate = legacy.lastRewardDate;
-        }
-        player.rewardedMilestones.addAll(legacy.rewardedMilestones);
-        return save(player) ? MergeResult.MERGED : MergeResult.FAILED;
+        return result.saved ? MergeResult.MERGED : MergeResult.FAILED;
     }
 
     public File getPlayersFolder() {
         return playersFolder;
+    }
+
+    public void requestLoad(String playerName, String uuid) {
+        String normalizedUuid = normalizeUuid(uuid);
+        String normalizedName = normalizePlayer(playerName);
+        String key = !normalizedUuid.isEmpty() ? "uuid." + normalizedUuid : "name." + normalizedName;
+        if (key.endsWith(".")) {
+            return;
+        }
+        pendingLoads.computeIfAbsent(key, ignored -> {
+            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> load(playerName, normalizedUuid), loaderExecutor);
+            future.whenComplete((ignoredResult, ignoredError) -> pendingLoads.remove(key));
+            return future;
+        });
+    }
+
+    public void warmUp(List<CSCommandSender> onlinePlayers) {
+        if (onlinePlayers == null) {
+            return;
+        }
+        for (CSCommandSender player : onlinePlayers) {
+            requestLoad(player.getName(), player.getUniqueId());
+        }
+    }
+
+    public void cleanupCache(Set<String> onlineUuids) {
+        Set<String> protectedUuids = onlineUuids == null ? Collections.emptySet() : onlineUuids;
+        if (playersByUuid.size() <= MAX_CACHED_PLAYERS) {
+            return;
+        }
+        for (String uuid : new ArrayList<>(playersByUuid.keySet())) {
+            if (playersByUuid.size() <= MAX_CACHED_PLAYERS || protectedUuids.contains(uuid)) {
+                continue;
+            }
+            PlayerVoteData removed = playersByUuid.remove(uuid);
+            if (removed != null) {
+                uuidsByName.remove(normalizePlayer(removed.name), uuid);
+            }
+        }
+    }
+
+    private MarkResult markRewarded(String playerName, String uuid, String rewardDate, long rewardedAt, boolean rejectDuplicate) {
+        UpdateResult result = update(playerName, uuid, player -> {
+            if (!player.hasUuid()) {
+                return UpdateResult.failed(player);
+            }
+            if (rejectDuplicate && rewardDate.equals(player.lastRewardDate)) {
+                return UpdateResult.duplicate(player);
+            }
+            player.name = preferName(player.name, playerName);
+            player.lastVoteAt = Math.max(player.lastVoteAt, rewardedAt);
+            player.lastRewardAt = Math.max(player.lastRewardAt, rewardedAt);
+            player.lastRewardDate = rewardDate;
+            return UpdateResult.saved(player);
+        });
+        if (result.duplicate) {
+            return MarkResult.DUPLICATE;
+        }
+        return result.saved ? MarkResult.MARKED : MarkResult.FAILED;
+    }
+
+    private boolean recordVote(String playerName, String uuid, long votedAt) {
+        return update(playerName, uuid, player -> {
+            if (!player.hasUuid()) {
+                return UpdateResult.failed(player);
+            }
+            player.name = preferName(player.name, playerName);
+            player.lastVoteAt = Math.max(player.lastVoteAt, votedAt);
+            return UpdateResult.saved(player);
+        }).saved;
     }
 
     private PlayerVoteData load(CSCommandSender sender) {
@@ -218,10 +292,16 @@ public class PlayerVoteStore {
             return new PlayerVoteData(playerName, "");
         }
 
+        PlayerVoteData cached = playersByUuid.get(normalizedUuid);
+        if (cached != null) {
+            return cached.copy();
+        }
+
         PlayerVoteData player = read(playerFile(normalizedUuid));
         player.uuid = normalizedUuid;
         player.name = preferName(player.name, playerName);
-        return player;
+        publish(player);
+        return player.copy();
     }
 
     private PlayerVoteData loadByName(String playerName) {
@@ -246,13 +326,82 @@ public class PlayerVoteStore {
         return load("", key);
     }
 
+    private UpdateResult updateByName(String playerName, Function<PlayerVoteData, UpdateResult> update) {
+        String uuid = uuidsByName.get(normalizePlayer(playerName));
+        if (uuid == null || uuid.isEmpty()) {
+            uuid = resolveUuid(playerName);
+        }
+        return update(playerName, uuid, update);
+    }
+
+    private UpdateResult updateByKey(String key, Function<PlayerVoteData, UpdateResult> update) {
+        PlayerVoteData player = loadByKey(key);
+        return update(player.name, player.uuid, update);
+    }
+
+    private UpdateResult update(String playerName, String uuid, Function<PlayerVoteData, UpdateResult> update) {
+        String normalizedUuid = normalizeUuid(uuid);
+        if (normalizedUuid.isEmpty()) {
+            normalizedUuid = resolveUuid(playerName);
+        }
+        if (normalizedUuid.isEmpty()) {
+            return UpdateResult.failed(new PlayerVoteData(playerName, ""));
+        }
+
+        String key = normalizedUuid;
+        CompletableFuture<UpdateResult> result = new CompletableFuture<>();
+        writeTails.compute(key, (ignored, previous) -> {
+            CompletableFuture<Void> safePrevious = previous == null ? CompletableFuture.completedFuture(null) : previous;
+            return safePrevious.handle((ignoredValue, ignoredError) -> null).thenRunAsync(() -> {
+                try {
+                    result.complete(applyUpdate(playerName, key, update));
+                } catch (RuntimeException ex) {
+                    result.completeExceptionally(ex);
+                }
+            }, Runnable::run);
+        }).whenComplete((ignoredValue, ignoredError) -> writeTails.remove(key));
+
+        try {
+            return result.join();
+        } catch (RuntimeException ex) {
+            logError("No se pudo actualizar el jugador " + key + ": " + ex.getMessage());
+            return UpdateResult.failed(new PlayerVoteData(playerName, key));
+        }
+    }
+
+    private UpdateResult applyUpdate(String playerName, String uuid, Function<PlayerVoteData, UpdateResult> update) {
+        PlayerVoteData current = load(playerName, uuid);
+        UpdateResult updated = update.apply(current.copy());
+        if (updated.unresolved || updated.duplicate || !updated.saved) {
+            publish(updated.player);
+            return updated;
+        }
+        if (!save(updated.player)) {
+            return UpdateResult.failed(current);
+        }
+        publish(updated.player);
+        return updated;
+    }
+
+    private PlayerVoteData cachedPlayer(String playerName, String uuid) {
+        String normalizedUuid = normalizeUuid(uuid);
+        if (normalizedUuid.isEmpty()) {
+            normalizedUuid = uuidsByName.get(normalizePlayer(playerName));
+        }
+        if (normalizedUuid == null || normalizedUuid.isEmpty()) {
+            return null;
+        }
+        PlayerVoteData player = playersByUuid.get(normalizedUuid);
+        return player == null ? null : player.copy();
+    }
+
     private String resolveUuid(String playerName) {
         String normalizedName = normalizePlayer(playerName);
         String indexed = uuidsByName.get(normalizedName);
         if (indexed != null && !indexed.isEmpty()) {
             return indexed;
         }
-        String resolved = normalizeUuid(plugin.resolvePlayerUniqueId(playerName));
+        String resolved = normalizeUuid(plugin == null ? "" : plugin.resolvePlayerUniqueId(playerName));
         if (!resolved.isEmpty()) {
             uuidsByName.put(normalizedName, resolved);
         }
@@ -271,7 +420,7 @@ public class PlayerVoteStore {
                 readLine(player, line);
             }
         } catch (IOException ex) {
-            plugin.logError("No se pudo cargar el archivo de jugador " + file.getName() + ": " + ex.getMessage());
+            logError("No se pudo cargar el archivo de jugador " + file.getName() + ": " + ex.getMessage());
         }
         return player;
     }
@@ -313,12 +462,29 @@ public class PlayerVoteStore {
 
         try {
             Files.write(playerFile(player.uuid).toPath(), render(player).getBytes(StandardCharsets.UTF_8));
-            index(player);
             return true;
         } catch (IOException ex) {
-            plugin.logError("No se pudo guardar el archivo de jugador " + player.uuid + ": " + ex.getMessage());
+            logError("No se pudo guardar el archivo de jugador " + player.uuid + ": " + ex.getMessage());
             return false;
         }
+    }
+
+    private void publish(PlayerVoteData player) {
+        if (!player.hasUuid()) {
+            return;
+        }
+        PlayerVoteData snapshot = player.copy();
+        playersByUuid.put(snapshot.uuid, snapshot);
+        String normalizedName = normalizePlayer(snapshot.name);
+        if (!normalizedName.isEmpty()) {
+            uuidsByName.put(normalizedName, snapshot.uuid);
+        }
+    }
+
+    private VoteStreakStore.Snapshot snapshot(PlayerVoteData player, boolean saved) {
+        return new VoteStreakStore.Snapshot(player.key(), player.name, player.uuid, player.lastVoteDay,
+                player.currentStreak, Math.max(player.bestStreak, player.currentStreak),
+                player.rewardedMilestones, saved);
     }
 
     private String render(PlayerVoteData player) {
@@ -336,34 +502,9 @@ public class PlayerVoteStore {
         return builder.toString();
     }
 
-    private void rebuildNameIndex() {
-        File[] files = playersFolder.listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(YAML_EXTENSION));
-        if (files == null) {
-            return;
-        }
-        for (File file : files) {
-            PlayerVoteData player = read(file);
-            if (!player.hasUuid()) {
-                player.uuid = stripExtension(file.getName());
-            }
-            index(player);
-        }
-    }
-
-    private void index(PlayerVoteData player) {
-        if (!player.hasUuid()) {
-            return;
-        }
-        namesByUuid.put(player.uuid, player.name);
-        String normalizedName = normalizePlayer(player.name);
-        if (!normalizedName.isEmpty()) {
-            uuidsByName.put(normalizedName, player.uuid);
-        }
-    }
-
     private void ensurePlayersFolder() {
         if (!playersFolder.exists() && !playersFolder.mkdirs()) {
-            plugin.logError("No se pudo crear la carpeta de jugadores: " + playersFolder.getAbsolutePath());
+            logError("No se pudo crear la carpeta de jugadores: " + playersFolder.getAbsolutePath());
         }
     }
 
@@ -473,6 +614,12 @@ public class PlayerVoteStore {
         return uuid == null ? "" : uuid.trim().toLowerCase(Locale.ROOT);
     }
 
+    private void logError(String message) {
+        if (plugin != null) {
+            plugin.logError(message);
+        }
+    }
+
     public enum MarkResult {
         MARKED,
         DUPLICATE,
@@ -483,6 +630,37 @@ public class PlayerVoteStore {
         MERGED,
         UNRESOLVED,
         FAILED
+    }
+
+    private static class UpdateResult {
+
+        private final PlayerVoteData player;
+        private final boolean saved;
+        private final boolean duplicate;
+        private final boolean unresolved;
+
+        private UpdateResult(PlayerVoteData player, boolean saved, boolean duplicate, boolean unresolved) {
+            this.player = player;
+            this.saved = saved;
+            this.duplicate = duplicate;
+            this.unresolved = unresolved;
+        }
+
+        private static UpdateResult saved(PlayerVoteData player) {
+            return new UpdateResult(player, true, false, false);
+        }
+
+        private static UpdateResult failed(PlayerVoteData player) {
+            return new UpdateResult(player, false, false, false);
+        }
+
+        private static UpdateResult duplicate(PlayerVoteData player) {
+            return new UpdateResult(player, false, true, false);
+        }
+
+        private static UpdateResult unresolved(PlayerVoteData player) {
+            return new UpdateResult(player, false, false, true);
+        }
     }
 
     public static class LegacyPlayerData {

@@ -1,8 +1,10 @@
 package com.cadiducho.cservidoresmc.bukkit;
 
 import com.cadiducho.cservidoresmc.ApiClient;
+import com.cadiducho.cservidoresmc.BoundedTaskExecutor;
 import com.cadiducho.cservidoresmc.LegacyPlayerDataMigrator;
 import com.cadiducho.cservidoresmc.PluginMetrics;
+import com.cadiducho.cservidoresmc.PlayerVoteStore;
 import com.cadiducho.cservidoresmc.RewardService;
 import com.cadiducho.cservidoresmc.Updater;
 import com.cadiducho.cservidoresmc.VoteReminderService;
@@ -27,6 +29,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.Executor;
 import java.util.logging.Level;
 
 /**
@@ -40,16 +43,20 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
     @Getter private RewardService rewardService;
     @Getter private VoteReminderService voteReminderService;
     @Getter private VoteStreakService voteStreakService;
+    private PlayerVoteStore playerVoteStore;
     @Getter private final PluginMetrics pluginMetrics = new PluginMetrics();
     
     private static BukkitPlugin instance;
 
     private CSConfiguration csConfiguration;
     private CSCommandManager commandManager;
+    private BoundedTaskExecutor asyncExecutor;
+    private volatile boolean active;
     
     @Override
     public void onEnable() {
         instance = this;
+        active = true;
 
         /*
          * Generar y cargar Config.yml
@@ -57,13 +64,16 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
         File configFile = new File(getDataFolder() + File.separator + "config.yml");
         new ConfigMigrator(instance, configFile).migrate();
         csConfiguration = new BukkitConfigurationAdapter(instance, configFile);
-        new LegacyPlayerDataMigrator(instance, getDataFolder()).migrate();
+        playerVoteStore = new PlayerVoteStore(getDataFolder(), instance);
+        new LegacyPlayerDataMigrator(instance, getDataFolder(), playerVoteStore).migrate();
 
-        apiClient = new ApiClient(instance, new Gson());
+        asyncExecutor = new BoundedTaskExecutor("40servidoresmc-http", pluginMetrics, this::logError);
+        apiClient = new ApiClient(instance, new Gson(), asyncExecutor);
         voteReminderService = new VoteReminderService(instance);
         voteStreakService = new VoteStreakService(instance);
         rewardService = new RewardService(instance);
         voteReminderService.start();
+        playerVoteStore.warmUp(getOnlinePlayers());
 
         /*
          * Comandos y eventos
@@ -81,15 +91,19 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
         updater = new Updater(instance, getPluginVersion(), getServer().getBukkitVersion().split("-")[0]);
         debugLog("Checkeando nuevas versiones...");
         updater.checkearVersion(null);
-        log("Plugin 40ServidoresMC v" + getPluginVersion() + " cargado completamente");
 
         checkDefaultKey();
+        printStartupInfo();
     }
 
     @Override
     public void onDisable() {
+        active = false;
         shutdownVoteReminderService();
         shutdownRewardService();
+        if (asyncExecutor != null) {
+            asyncExecutor.shutdownNow();
+        }
     }
 
     @Override
@@ -138,9 +152,33 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
         return this.csConfiguration;
     }
 
+    private void printStartupInfo() {
+        ConsoleCommandSender console = getServer().getConsoleSender();
+        console.sendMessage("");
+        console.sendMessage(ChatColor.AQUA + "  40  " + ChatColor.WHITE + "40ServidoresMC " + ChatColor.GRAY + "v" + getPluginVersion());
+        console.sendMessage(ChatColor.AQUA + "      " + ChatColor.DARK_GRAY + "Running on Bukkit - " + getServer().getName() + " " + getServer().getBukkitVersion().split("-")[0]);
+        console.sendMessage(ChatColor.AQUA + "      " + ChatColor.DARK_GRAY + "Reescrito por JainaGam3r45");
+        console.sendMessage("");
+    }
+
     @Override
     public File getPluginDataFolder() {
         return getDataFolder();
+    }
+
+    @Override
+    public PlayerVoteStore getPlayerVoteStore() {
+        return playerVoteStore;
+    }
+
+    @Override
+    public boolean isActive() {
+        return active;
+    }
+
+    @Override
+    public Executor getAsyncExecutor() {
+        return asyncExecutor == null ? CSPlugin.super.getAsyncExecutor() : asyncExecutor;
     }
 
     @Override

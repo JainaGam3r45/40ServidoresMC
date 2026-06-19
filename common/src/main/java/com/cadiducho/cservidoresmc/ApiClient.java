@@ -18,6 +18,10 @@ import java.net.URLEncoder;
 import java.net.URL;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Supplier;
 
 public class ApiClient {
 
@@ -32,23 +36,33 @@ public class ApiClient {
     private final CSPlugin plugin;
     private final Gson gson;
     private final HttpRequester httpRequester;
+    private final Executor executor;
     private final String apiUrl;
     private final TtlCache<String, ServerStats> serverStatsCache;
     private final TtlCache<String, VoteResponse> voteCache;
     private volatile String apiStatus = API_STATUS_UNKNOWN;
 
     public ApiClient(CSPlugin plugin, Gson gson) {
-        this(plugin, gson, new HttpRequester(), API_URL, new SystemClock());
+        this(plugin, gson, new HttpRequester(), API_URL, new SystemClock(), plugin.getAsyncExecutor());
     }
 
     ApiClient(CSPlugin plugin, Gson gson, HttpRequester httpRequester, String apiUrl) {
-        this(plugin, gson, httpRequester, apiUrl, new SystemClock());
+        this(plugin, gson, httpRequester, apiUrl, new SystemClock(), ForkJoinPool.commonPool());
     }
 
     ApiClient(CSPlugin plugin, Gson gson, HttpRequester httpRequester, String apiUrl, Clock clock) {
+        this(plugin, gson, httpRequester, apiUrl, clock, ForkJoinPool.commonPool());
+    }
+
+    public ApiClient(CSPlugin plugin, Gson gson, Executor executor) {
+        this(plugin, gson, new HttpRequester(), API_URL, new SystemClock(), executor);
+    }
+
+    ApiClient(CSPlugin plugin, Gson gson, HttpRequester httpRequester, String apiUrl, Clock clock, Executor executor) {
         this.plugin = plugin;
         this.gson = gson;
         this.httpRequester = httpRequester;
+        this.executor = executor == null ? ForkJoinPool.commonPool() : executor;
         this.apiUrl = apiUrl;
         this.serverStatsCache = new TtlCache<>(clock);
         this.voteCache = new TtlCache<>(clock);
@@ -70,7 +84,7 @@ public class ApiClient {
             return CompletableFuture.completedFuture(cachedVote);
         }
 
-        return CompletableFuture.supplyAsync(() -> {
+        return submitRequest(() -> {
             try {
                 plugin.getPluginMetrics().incrementVoteChecks();
                 VoteResponse voteResponse = fetchData("&nombre=" + urlEncode(player), "GET", VoteResponse.class);
@@ -90,7 +104,7 @@ public class ApiClient {
             return CompletableFuture.completedFuture(cachedStats);
         }
 
-        return CompletableFuture.supplyAsync(() -> {
+        return submitRequest(() -> {
             try {
                 ServerStats serverStats = fetchData("&estadisticas=1", "GET", ServerStats.class);
                 cacheServerStats(serverStats);
@@ -237,5 +251,15 @@ public class ApiClient {
 
     private String voteCacheKey(String player) {
         return (player == null ? "" : player).toLowerCase(Locale.ROOT);
+    }
+
+    private <T> CompletableFuture<T> submitRequest(Supplier<T> supplier) {
+        try {
+            return CompletableFuture.supplyAsync(supplier, executor);
+        } catch (RejectedExecutionException ex) {
+            CompletableFuture<T> future = new CompletableFuture<>();
+            future.completeExceptionally(new IllegalStateException("HTTP executor rejected the request.", ex));
+            return future;
+        }
     }
 }
