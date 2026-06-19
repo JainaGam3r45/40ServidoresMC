@@ -28,6 +28,10 @@ class ConfigValueResolver {
     }
 
     Object value(String path) {
+        if ("configVersion".equals(path)) {
+            return defaultConfig.get(path);
+        }
+
         if (userConfig.isSet(path)) {
             return userConfig.get(path);
         }

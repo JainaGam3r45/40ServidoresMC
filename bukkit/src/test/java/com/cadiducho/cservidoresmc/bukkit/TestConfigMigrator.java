@@ -162,6 +162,39 @@ public class TestConfigMigrator {
     }
 
     @Test
+    void outdatedConfigVersionIsUpdatedToTemplateDefault() throws Exception {
+        File config = writeConfig(
+                "configVersion: 3\n" +
+                        "debug: false\n" +
+                        "api:\n" +
+                        "  key: \"server-key\"\n"
+        );
+
+        new ConfigMigrator(new TestPlugin(tempDir.toFile()), config).migrate();
+
+        String migrated = normalize(read(config));
+        assertTrue(migrated.contains("configVersion: 7"));
+        assertFalse(migrated.contains("configVersion: 3"));
+        assertTrue(migrated.contains("  key: \"server-key\""));
+    }
+
+    @Test
+    void legacyConfigVerDoesNotPreserveOldVersionNumber() throws Exception {
+        File config = writeConfig(
+                "configVer: 3\n" +
+                        "debug: false\n" +
+                        "clave: server-key\n"
+        );
+
+        new ConfigMigrator(new TestPlugin(tempDir.toFile()), config).migrate();
+
+        String migrated = normalize(read(config));
+        assertTrue(migrated.contains("configVersion: 7"));
+        assertFalse(migrated.contains("configVer:"));
+        assertFalse(migrated.contains("configVersion: 3"));
+    }
+
+    @Test
     void extraKeysAreOnlyKeptInBackupAndWarned() throws Exception {
         File config = writeConfig(
                 "debug: false\n" +
