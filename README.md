@@ -29,18 +29,45 @@ Claves principales:
 
 Las claves antiguas como `clave`, `mensaje`, `tag` y `comandosCustom` siguen funcionando como fallback, pero el migrador las moverá a la estructura nueva para evitar confusión.
 
+Placeholders en la configuración
+------------
+Estos placeholders los resuelve el propio plugin al enviar mensajes o ejecutar comandos. No requieren PlaceholderAPI.
+
+| Placeholder | Dónde se usa | Descripción |
+| --- | --- | --- |
+| `%player%` | `rewards.commands`, `broadcast.message`, `streakRewards` | Nombre del jugador premiado. |
+| `%time%` | `messages.alreadyRewarded` | Tiempo restante hasta poder volver a votar. |
+| `%uuid%` | `streakRewards` | UUID del jugador al entregar un premio de racha. |
+| `%streak%` | `streakRewards` | Racha actual al entregar un premio de racha. |
+
+Las plantillas por defecto usan `%player%`. Las configuraciones antiguas con `{0}` siguen funcionando como compatibilidad hacia atrás.
+
 PlaceholderAPI
 ------------
 La integración con PlaceholderAPI es opcional. Si PlaceholderAPI no está instalado, el plugin cargará igual. Los placeholders no hacen llamadas HTTP directas: usan caché, datos locales o valores fallback configurables.
 
+Identificador de la expansión: `%40servidoresmc_<nombre>%`.
+
+### Servidor
+
 | Placeholder | Descripción | Ejemplo |
 | --- | --- | --- |
+| `%40servidoresmc_server_name%` | Nombre del servidor en 40ServidoresMC desde la caché. | `Mi Servidor` |
 | `%40servidoresmc_server_rank%` | Puesto del servidor desde la caché de estadísticas. | `12` |
 | `%40servidoresmc_server_votes%` | Votos totales si la API los devuelve. | `348` |
 | `%40servidoresmc_votes_today%` | Votos recibidos hoy desde la caché. | `18` |
+| `%40servidoresmc_votes_week%` | Votos recibidos esta semana desde la caché. | `92` |
 | `%40servidoresmc_votes_month%` | Votos mensuales si la API los devuelve. | `245` |
 | `%40servidoresmc_rewarded_today%` | Votos premiados hoy desde la caché. | `16` |
-| `%40servidoresmc_player_last_vote%` | Fecha y hora del último voto local registrado. | `2026-06-18 15:30:00` |
+| `%40servidoresmc_rewarded_week%` | Votos premiados esta semana desde la caché. | `74` |
+
+### Jugador
+
+Requieren contexto de jugador (por ejemplo, `/papi parse <jugador> ...`).
+
+| Placeholder | Descripción | Ejemplo |
+| --- | --- | --- |
+| `%40servidoresmc_player_last_vote%` | Fecha y hora del último voto local registrado. Usa `placeholderapi.formats.dateTime`. | `18/06/2026 15:30` |
 | `%40servidoresmc_player_last_vote_ago%` | Tiempo transcurrido desde el último voto local. | `2h 15m` |
 | `%40servidoresmc_player_can_vote%` | Indica si el jugador puede votar según el cooldown local. | `true` |
 | `%40servidoresmc_player_next_vote_in%` | Tiempo restante para volver a votar según datos locales. | `21h 45m` |
@@ -48,6 +75,11 @@ La integración con PlaceholderAPI es opcional. Si PlaceholderAPI no está insta
 | `%40servidoresmc_player_best_streak%` | Mejor racha guardada localmente. | `9` |
 | `%40servidoresmc_player_next_streak_reward%` | Próximo hito configurado en `streakRewards`. | `7` |
 | `%40servidoresmc_player_pending_reward%` | Indica si hay una comprobación de autoReward pendiente. | `false` |
+
+### Sistema
+
+| Placeholder | Descripción | Ejemplo |
+| --- | --- | --- |
 | `%40servidoresmc_api_status%` | Estado de la última llamada API: `ok`, `error` o `unknown`. | `ok` |
 | `%40servidoresmc_cache_age%` | Edad de la caché de estadísticas del servidor. | `45s` |
 
