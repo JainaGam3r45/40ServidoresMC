@@ -25,10 +25,10 @@ public class HttpConfig {
             return new HttpConfig(DEFAULT_TIMEOUT, DEFAULT_TIMEOUT, DEFAULT_RETRIES, DEFAULT_RETRY_BACKOFF);
         }
 
-        int readTimeout = configuration.getInt("readTimeOut", DEFAULT_TIMEOUT);
-        int connectTimeout = configuration.getInt("connectTimeOut", readTimeout);
-        int retries = configuration.getInt("httpRetries", DEFAULT_RETRIES);
-        int retryBackoff = configuration.getInt("httpRetryBackoff", DEFAULT_RETRY_BACKOFF);
+        int readTimeout = configuration.getInt("api.readTimeout", "readTimeOut", DEFAULT_TIMEOUT);
+        int connectTimeout = configuration.getInt("api.connectTimeout", "connectTimeOut", readTimeout);
+        int retries = configuration.getInt("api.retries", "httpRetries", DEFAULT_RETRIES);
+        int retryBackoff = configuration.getInt("api.retryBackoffMillis", "httpRetryBackoff", DEFAULT_RETRY_BACKOFF);
 
         return new HttpConfig(connectTimeout, readTimeout, retries, retryBackoff);
     }

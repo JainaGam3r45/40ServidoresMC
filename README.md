@@ -8,6 +8,27 @@ Con este plugin podrás otorgar a tus jugadores premios por votar a tu servidor,
 
 Puedes encontrar mucha más información en nuestra [Wiki](https://github.com/Cadiducho/40ServidoresMC/wiki) y aprende todo lo necesario sobre este plugin!
 
+Configuración
+------------
+Las versiones actuales usan una estructura de `config.yml` en inglés y agrupada por secciones. Las instalaciones antiguas con claves en español se migran automáticamente con backup.
+
+Claves principales:
+
+| Sección | Uso |
+| --- | --- |
+| `api.key` | Clave privada del servidor en 40ServidoresMC. |
+| `api.readTimeout` / `api.connectTimeout` | Timeouts HTTP en milisegundos. |
+| `messages.prefix` | Prefijo de los mensajes del plugin. |
+| `messages.voteClaim` | Mensaje al entregar una recompensa de voto. |
+| `messages.alreadyRewarded` | Mensaje cuando el jugador ya recibió la recompensa. Usa `%time%`. |
+| `broadcast.enabled` / `broadcast.message` | Activa y configura el anuncio global de recompensa. |
+| `rewards.commands` | Comandos ejecutados desde consola al premiar un voto. |
+| `streakRewards` | Premios por hitos de racha. |
+| `autoReward` | Reintentos automáticos tras votar en la web. |
+| `voteReminder` | Recordatorios locales para volver a votar. |
+
+Las claves antiguas como `clave`, `mensaje`, `tag` y `comandosCustom` siguen funcionando como fallback, pero el migrador las moverá a la estructura nueva para evitar confusión.
+
 PlaceholderAPI
 ------------
 La integración con PlaceholderAPI es opcional. Si PlaceholderAPI no está instalado, el plugin cargará igual. Los placeholders no hacen llamadas HTTP directas: usan caché, datos locales o valores fallback configurables.

@@ -1,40 +1,58 @@
+# 40ServidoresMC configuration
+# Documentation: https://github.com/JainaGam3r45/40ServidoresMC
+
+configVersion: 7
 debug: false
-clave: key
+
+api:
+  # Your 40ServidoresMC server API key.
+  # Keep this value private.
+  key: "CHANGE_ME"
+
+  # HTTP timeout in milliseconds.
+  readTimeout: 5000
+  connectTimeout: 5000
+
+  # Retry failed transient requests such as timeouts and 5xx responses.
+  retries: 2
+  retryBackoffMillis: 250
+
+messages:
+  # Prefix used by plugin messages.
+  prefix: "&8[&b40ServidoresMC&8]"
+
+  # Sent when the player has voted and can claim the reward.
+  voteClaim: "&aThanks for voting! Run the command again to claim your reward."
+
+  # Sent when the player already received today's reward.
+  alreadyRewarded: "&aYou already voted and received your reward. You can vote again in &e%time%&a."
 
 broadcast:
-  activado: true
-  mensajeBroadcast: '&aGracias a {0} por votarnos! El ya ha obtenido su premio, usa &2/voto40&a y obten el tuyo'
+  # Announce vote rewards to all online players.
+  enabled: true
+  message: "&eThanks &6{0} &efor voting! They received a reward. Use &6&l/vote40 &eto get yours too."
 
-mensaje: '&6Gracias por votarnos! Aqui tienes tu premio: '
-alreadyRewardedMessage: '&aYa has votado y recibido tu recompensa. Podrás volver a votar en &e%time%&a.'
-
-comandosCustom:
-  - "money add {0} 10"
+rewards:
+  # Commands executed as console when a player receives a vote reward.
+  commands:
+    - "minecraft:give {0} minecraft:baked_potato 32"
+    - "minecraft:give {0} minecraft:golden_apple 3"
 
 streakRewards:
+  # Extra rewards for consecutive voting streak milestones.
   3:
     - "give %player% diamond 1"
   7:
     - "give %player% emerald 5"
 
-readTimeOut: 5000
-connectTimeOut: 5000
-httpRetries: 2
-httpRetryBackoff: 250
-
 cache:
+  # Cache API responses to reduce HTTP requests.
   enabled: true
   serverStatsTtlSeconds: 60
   voteCheckNegativeTtlSeconds: 5
 
-placeholderapi:
-  enabled: true
-  fallbacks:
-    notAvailable: "N/A"
-    zero: "0"
-    false: "false"
-
 autoReward:
+  # Recheck votes shortly after a player uses the vote command.
   enabled: true
   recheckDelaysSeconds:
     - 10
@@ -44,9 +62,15 @@ autoReward:
   debug: false
 
 voteReminder:
+  # Notify players when their local vote cooldown has expired.
   enabled: true
-  message: '&aYa puedes volver a votar en 40ServidoresMC. Usa &2/voto40&a para recibir tu premio.'
+  message: "&aYou can vote again on 40ServidoresMC. Use &2/vote40&a to receive your reward."
   checkIntervalSeconds: 300
 
-tag: "&8[&b40ServidoresMC&8]"
-configVer: 7
+placeholderapi:
+  # Optional PlaceholderAPI integration and fallback values.
+  enabled: true
+  fallbacks:
+    notAvailable: "N/A"
+    zero: "0"
+    false: "false"

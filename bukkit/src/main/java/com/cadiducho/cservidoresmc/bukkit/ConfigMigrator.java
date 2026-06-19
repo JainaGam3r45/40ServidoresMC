@@ -26,6 +26,7 @@ public class ConfigMigrator {
 
     private static final String TEMPLATE_RESOURCE = "config.yml";
     private static final String FALLBACK_HEADER = "# Opciones añadidas automáticamente desde la configuración por defecto";
+    private static final List<LegacyPath> LEGACY_PATHS = legacyPaths();
 
     private final CSPlugin plugin;
     private final File configFile;
@@ -77,10 +78,13 @@ public class ConfigMigrator {
         validateYaml(template);
         validateYaml(userConfig);
 
-        YamlDocument templateDocument = YamlDocument.parse(template);
+        YamlConfiguration userYaml = loadYaml(userConfig);
+        String effectiveTemplate = applyLegacyValues(template, userConfig, userYaml);
+        YamlDocument templateDocument = YamlDocument.parse(effectiveTemplate);
         YamlDocument userDocument = YamlDocument.parse(userConfig);
         List<KeyBlock> missingBlocks = collectMissingBlocks(templateDocument, userDocument);
         String migrated = missingBlocks.isEmpty() ? userConfig : patchConfig(userConfig, templateDocument, userDocument, missingBlocks);
+        migrated = removeMigratedLegacyPaths(migrated, userYaml);
         migrated = normalizeBlankLines(migrated);
         if (migrated.equals(userConfig)) {
             return;
@@ -206,8 +210,170 @@ public class ConfigMigrator {
     }
 
     private void validateYaml(String text) throws InvalidConfigurationException {
+        loadYaml(text);
+    }
+
+    private YamlConfiguration loadYaml(String text) throws InvalidConfigurationException {
         YamlConfiguration configuration = new YamlConfiguration();
         configuration.loadFromString(text);
+        return configuration;
+    }
+
+    private String applyLegacyValues(String template, String userConfig, YamlConfiguration userYaml) {
+        String rendered = template;
+        for (LegacyPath legacyPath : LEGACY_PATHS) {
+            String sourcePath = sourcePath(userYaml, legacyPath);
+            if (sourcePath == null) {
+                continue;
+            }
+
+            YamlDocument renderedDocument = YamlDocument.parse(rendered);
+            YamlDocument userDocument = YamlDocument.parse(userConfig);
+            KeyBlock targetBlock = renderedDocument.blocks.get(legacyPath.currentPath);
+            KeyBlock sourceBlock = userDocument.blocks.get(sourcePath);
+            if (targetBlock == null || sourceBlock == null) {
+                continue;
+            }
+
+            String replacement = renderMappedBlock(targetBlock, sourceBlock, legacyPath);
+            rendered = replaceBlock(rendered, renderedDocument, targetBlock, replacement);
+        }
+        return rendered;
+    }
+
+    private String sourcePath(YamlConfiguration userYaml, LegacyPath legacyPath) {
+        if (userYaml.isSet(legacyPath.currentPath)) {
+            return legacyPath.currentPath;
+        }
+        return userYaml.isSet(legacyPath.legacyPath) ? legacyPath.legacyPath : null;
+    }
+
+    private String renderMappedBlock(KeyBlock targetBlock, KeyBlock sourceBlock, LegacyPath legacyPath) {
+        String lineSeparator = System.lineSeparator();
+        String indent = repeat(' ', targetBlock.indent);
+        String key = lastPathPart(legacyPath.currentPath);
+        StringBuilder replacement = new StringBuilder();
+        appendLeadingComments(targetBlock.text, replacement, lineSeparator);
+        if (legacyPath.list) {
+            List<String> items = listItems(sourceBlock.text);
+            replacement.append(indent).append(key).append(':').append(lineSeparator);
+            for (String item : items) {
+                replacement.append(indent).append("  - ").append(quote(item)).append(lineSeparator);
+            }
+            return replacement.toString();
+        }
+        replacement.append(indent).append(key).append(':').append(rawScalarValue(sourceBlock.text)).append(lineSeparator);
+        return replacement.toString();
+    }
+
+    private void appendLeadingComments(String blockText, StringBuilder builder, String lineSeparator) {
+        String[] lines = blockText.replace("\r\n", "\n").replace('\r', '\n').split("\n");
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                builder.append(line).append(lineSeparator);
+                continue;
+            }
+            return;
+        }
+    }
+
+    private String replaceBlock(String text, YamlDocument document, KeyBlock block, String replacement) {
+        int start = document.offsetForLine(block.blockStart);
+        int end = block.blockEnd < document.lineOffsets.size() ? document.offsetForLine(block.blockEnd) : text.length();
+        return text.substring(0, start) + replacement + text.substring(end);
+    }
+
+    private String removeMigratedLegacyPaths(String text, YamlConfiguration originalYaml) {
+        String migrated = text;
+        for (LegacyPath legacyPath : LEGACY_PATHS) {
+            if (!originalYaml.isSet(legacyPath.legacyPath)) {
+                continue;
+            }
+
+            YamlDocument document = YamlDocument.parse(migrated);
+            if (!document.blocks.containsKey(legacyPath.currentPath)) {
+                continue;
+            }
+
+            KeyBlock legacyBlock = document.blocks.get(legacyPath.legacyPath);
+            if (legacyBlock != null) {
+                migrated = removeBlock(migrated, document, legacyBlock);
+            }
+        }
+        return migrated;
+    }
+
+    private String removeBlock(String text, YamlDocument document, KeyBlock block) {
+        int start = document.offsetForLine(block.blockStart);
+        int end = block.blockEnd < document.lineOffsets.size() ? document.offsetForLine(block.blockEnd) : text.length();
+        return text.substring(0, start) + text.substring(end);
+    }
+
+    private String rawScalarValue(String blockText) {
+        String[] lines = blockText.replace("\r\n", "\n").replace('\r', '\n').split("\n");
+        for (String line : lines) {
+            int colon = line.indexOf(':');
+            if (colon >= 0) {
+                String value = line.substring(colon + 1);
+                return value.isEmpty() ? " \"\"" : value;
+            }
+        }
+        return " \"\"";
+    }
+
+    private List<String> listItems(String blockText) {
+        List<String> items = new ArrayList<>();
+        String[] lines = blockText.replace("\r\n", "\n").replace('\r', '\n').split("\n");
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("- ")) {
+                items.add(unquote(trimmed.substring(2).trim()));
+            }
+        }
+        return items;
+    }
+
+    private String quote(String value) {
+        String safe = value == null ? "" : value;
+        return "\"" + safe.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
+
+    private String unquote(String value) {
+        if (value.length() >= 2 && ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'")))) {
+            return value.substring(1, value.length() - 1);
+        }
+        return value;
+    }
+
+    private String repeat(char character, int times) {
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < times; i++) {
+            builder.append(character);
+        }
+        return builder.toString();
+    }
+
+    private String lastPathPart(String path) {
+        int dot = path.lastIndexOf('.');
+        return dot < 0 ? path : path.substring(dot + 1);
+    }
+
+    private static List<LegacyPath> legacyPaths() {
+        List<LegacyPath> paths = new ArrayList<>();
+        paths.add(new LegacyPath("configVer", "configVersion", false));
+        paths.add(new LegacyPath("clave", "api.key", false));
+        paths.add(new LegacyPath("readTimeOut", "api.readTimeout", false));
+        paths.add(new LegacyPath("connectTimeOut", "api.connectTimeout", false));
+        paths.add(new LegacyPath("httpRetries", "api.retries", false));
+        paths.add(new LegacyPath("httpRetryBackoff", "api.retryBackoffMillis", false));
+        paths.add(new LegacyPath("tag", "messages.prefix", false));
+        paths.add(new LegacyPath("mensaje", "messages.voteClaim", false));
+        paths.add(new LegacyPath("alreadyRewardedMessage", "messages.alreadyRewarded", false));
+        paths.add(new LegacyPath("broadcast.activado", "broadcast.enabled", false));
+        paths.add(new LegacyPath("broadcast.mensajeBroadcast", "broadcast.message", false));
+        paths.add(new LegacyPath("comandosCustom", "rewards.commands", true));
+        return paths;
     }
 
     private String readTemplate() throws IOException {
@@ -466,6 +632,19 @@ public class ConfigMigrator {
             this.text = text;
             this.leadingBlank = leadingBlank;
             this.fallback = fallback;
+        }
+    }
+
+    private static class LegacyPath {
+
+        private final String legacyPath;
+        private final String currentPath;
+        private final boolean list;
+
+        private LegacyPath(String legacyPath, String currentPath, boolean list) {
+            this.legacyPath = legacyPath;
+            this.currentPath = currentPath;
+            this.list = list;
         }
     }
 }

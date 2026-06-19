@@ -50,13 +50,14 @@ public interface CSPlugin {
      * Comprobar si la configuración tiene una clave válida
      */
     default void checkDefaultKey() {
-        if (getCSConfiguration().getInt("configVer", 0) != configVersion()) {
+        if (getCSConfiguration().getInt("configVersion", "configVer", 0) != configVersion()) {
             logError("¡Tu configuración es de una versión más antigua a la de este plugin!");
             logError("Actualiza la configuración para evitar errores.");
         }
-        if (getCSConfiguration().getString("clave", "key").equalsIgnoreCase("key")) {
+        String apiKey = getCSConfiguration().getString("api.key", "clave", "key");
+        if (apiKey.equalsIgnoreCase("key") || apiKey.equalsIgnoreCase("CHANGE_ME")) {
             logError("¡Atención! La clave del servidor no está correctamente configurada");
-            logError("Accede a la configuración y modifica 'clave' con el valor correcto obtenido en la página web.");
+            logError("Accede a la configuración y modifica 'api.key' con el valor correcto obtenido en la página web.");
             logError("Este error hará que el plugin no funcione correctamente.");
         }
     }

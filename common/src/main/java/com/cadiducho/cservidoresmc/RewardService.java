@@ -111,7 +111,7 @@ public class RewardService {
         recordVote(sender);
         recordStreak(sender);
         invalidateVoteCaches(player);
-        sender.sendMessageWithTag(plugin.getCSConfiguration().getString("mensaje"));
+        sender.sendMessageWithTag(plugin.getCSConfiguration().getString("messages.voteClaim", "mensaje", ""));
 
         for (String command : plugin.getCSConfiguration().customCommandsList()) {
             String parsedCommand = command.replace("{0}", player);
@@ -120,8 +120,8 @@ public class RewardService {
 
         plugin.getPluginMetrics().incrementRewardsDelivered();
 
-        if (plugin.getCSConfiguration().getBoolean("broadcast.activado")) {
-            plugin.broadcastMessage(plugin.getCSConfiguration().getString("broadcast.mensajeBroadcast").replace("{0}", player));
+        if (plugin.getCSConfiguration().getBoolean("broadcast.enabled", "broadcast.activado", true)) {
+            plugin.broadcastMessage(plugin.getCSConfiguration().getString("broadcast.message", "broadcast.mensajeBroadcast", "").replace("{0}", player));
         }
 
         debug("Premio entregado a " + player + ".");
@@ -278,7 +278,7 @@ public class RewardService {
     }
 
     private void sendAlreadyRewardedMessage(CSCommandSender sender) {
-        String message = plugin.getCSConfiguration().getString("alreadyRewardedMessage", DEFAULT_ALREADY_REWARDED_MESSAGE);
+        String message = plugin.getCSConfiguration().getString("messages.alreadyRewarded", "alreadyRewardedMessage", DEFAULT_ALREADY_REWARDED_MESSAGE);
         sender.sendMessageWithTag(message.replace("%time%", VoteTimeFormatter.formatDuration(nextVoteInMillis(sender))));
     }
 

@@ -55,11 +55,11 @@ public class ApiClient {
     }
 
     public String apiKey() {
-        return plugin.getCSConfiguration().getString("clave");
+        return plugin.getCSConfiguration().getString("api.key", "clave", "");
     }
 
     public int timeOut() {
-        return plugin.getCSConfiguration().getInt("readTimeOut", HttpConfig.DEFAULT_TIMEOUT);
+        return plugin.getCSConfiguration().getInt("api.readTimeout", "readTimeOut", HttpConfig.DEFAULT_TIMEOUT);
     }
 
     public CompletableFuture<VoteResponse> validateVote(String player) {

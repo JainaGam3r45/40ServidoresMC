@@ -26,7 +26,7 @@ public class TestCMD extends CSCommand {
 
         sender.sendMessageWithTag("&bPlataforma de test para 40ServidoresMC:");
         sender.sendMessage("");
-        sender.sendMessageWithTag(plugin.getCSConfiguration().getString("mensaje"));
+        sender.sendMessageWithTag(plugin.getCSConfiguration().getString("messages.voteClaim", "mensaje", ""));
         for (String cmds : plugin.getCSConfiguration().customCommandsList()) {
             String comando = cmds.replace("{0}", sender.getName());
             plugin.dispatchCommand(comando);

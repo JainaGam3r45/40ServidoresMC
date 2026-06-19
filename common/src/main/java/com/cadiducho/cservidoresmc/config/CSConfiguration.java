@@ -22,7 +22,7 @@ public interface CSConfiguration {
      * @return Lista de comandos custom
      */
     default List<String> customCommandsList() {
-        return getStringList("comandosCustom");
+        return getStringList("rewards.commands", "comandosCustom", new ArrayList<>());
     }
 
     /**
@@ -30,7 +30,7 @@ public interface CSConfiguration {
      * @return El tag del plugin
      */
     default String getTag() {
-        return getString("tag", "&8[&b40ServidoresMC&8]");
+        return getString("messages.prefix", "tag", "&8[&b40ServidoresMC&8]");
     }
 
     /**
@@ -40,6 +40,14 @@ public interface CSConfiguration {
      * @return El valor de la clave en la configuración
      */
     String getString(String key, String defValue);
+
+    default String getString(String key, String legacyKey, String defValue) {
+        String value = getString(key, null);
+        if (value != null) {
+            return value;
+        }
+        return getString(legacyKey, defValue);
+    }
 
     /**
      * Devuelve una string de la configuración
@@ -58,6 +66,15 @@ public interface CSConfiguration {
      */
     int getInt(String key, int defValue);
 
+    default int getInt(String key, String legacyKey, int defValue) {
+        int sentinel = Integer.MIN_VALUE;
+        int value = getInt(key, sentinel);
+        if (value != sentinel) {
+            return value;
+        }
+        return getInt(legacyKey, defValue);
+    }
+
     /**
      * Devuelve un int de la configuración
      * @param key La clave
@@ -74,6 +91,14 @@ public interface CSConfiguration {
      * @return El valor de la clave en la configuración
      */
     boolean getBoolean(String key, boolean defValue);
+
+    default boolean getBoolean(String key, String legacyKey, boolean defValue) {
+        String value = getString(key, null);
+        if (value != null) {
+            return Boolean.parseBoolean(value);
+        }
+        return getBoolean(legacyKey, defValue);
+    }
 
     /**
      * Devuelve un boolean de la configuración
@@ -100,6 +125,14 @@ public interface CSConfiguration {
      * @return El valor de la clave en la configuración
      */
     List<String> getStringList(String path, List<String> def);
+
+    default List<String> getStringList(String path, String legacyPath, List<String> def) {
+        List<String> value = getStringList(path, null);
+        if (value != null) {
+            return value;
+        }
+        return getStringList(legacyPath, def);
+    }
 
     /**
      * Devuelve un mapa de strings de la configuración
