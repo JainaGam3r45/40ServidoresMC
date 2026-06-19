@@ -63,8 +63,15 @@ class ConfigTemplateRenderer {
         appendLine(builder, indent + line.getKey() + ":");
         String itemIndent = indent + INDENT;
         for (String item : list) {
-            appendLine(builder, itemIndent + "- " + quote(item));
+            appendLine(builder, itemIndent + "- " + renderListItem(item));
         }
+    }
+
+    private String renderListItem(String value) {
+        if (value != null && value.matches("-?\\d+(\\.\\d+)?")) {
+            return value;
+        }
+        return quote(value);
     }
 
     private String renderScalar(Object value) {
