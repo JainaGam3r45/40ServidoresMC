@@ -7,6 +7,7 @@ import com.cadiducho.cservidoresmc.Updater;
 import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.api.CSPlugin;
 import com.cadiducho.cservidoresmc.config.CSConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -52,87 +53,87 @@ public class TestConfigMigrator {
         new ConfigMigrator(plugin, config).migrate();
 
         String migrated = normalize(read(config));
-        assertTrue(migrated.contains("# Comentario personalizado"));
+        assertTrue(migrated.contains("# 40ServidoresMC configuration"));
+        assertFalse(migrated.contains("# Comentario personalizado"));
         assertTrue(migrated.contains("debug: true"));
-        assertTrue(migrated.contains("customExtra: keep-me"));
         assertTrue(migrated.contains("configVersion: 7"));
         assertTrue(migrated.contains("api:\n"));
-        assertTrue(migrated.contains("  key: personalizada"));
+        assertTrue(migrated.contains("  key: \"personalizada\""));
         assertTrue(migrated.contains("  readTimeout: 7000"));
         assertTrue(migrated.contains("  connectTimeout: 8000"));
         assertTrue(migrated.contains("  retries: 4"));
         assertTrue(migrated.contains("  retryBackoffMillis: 600"));
         assertTrue(migrated.contains("messages:\n"));
-        assertTrue(migrated.contains("  prefix: '&8[&bCustom&8]'"));
-        assertTrue(migrated.contains("  voteClaim: '&dPremio propio'"));
-        assertTrue(migrated.contains("  alreadyRewarded: '&aYa reclamaste. Vuelve en %time%.'"));
+        assertTrue(migrated.contains("  prefix: \"&8[&bCustom&8]\""));
+        assertTrue(migrated.contains("  voteClaim: \"&dPremio propio\""));
+        assertTrue(migrated.contains("  alreadyRewarded: \"&aYa reclamaste. Vuelve en %time%.\""));
         assertTrue(migrated.contains("broadcast:\n"));
-        assertTrue(migrated.contains("  # Announce vote rewards to all online players."));
         assertTrue(migrated.contains("  enabled: false"));
-        assertTrue(migrated.contains("  message: '&bMensaje propio'"));
+        assertTrue(migrated.contains("  message: \"&bMensaje propio\""));
         assertTrue(migrated.contains("rewards:\n"));
         assertTrue(migrated.contains("  commands:\n    - \"give {0} stone 1\""));
+        assertFalse(migrated.contains("customExtra:"));
         assertFalse(migrated.contains("clave:"));
         assertFalse(migrated.contains("configVer:"));
         assertFalse(migrated.contains("comandosCustom:"));
         assertFalse(migrated.contains("mensajeBroadcast:"));
         assertFalse(migrated.contains("\n\n\n"));
         assertTrue(plugin.logs.get(0).contains("config.yml actualizado"));
+        assertTrue(plugin.errors.get(0).contains("customExtra"));
         assertEquals(1, backupCount());
     }
 
     @Test
-    void addsNestedKeysInsideExistingParent() throws Exception {
+    void preservesCustomApiKey() throws Exception {
         File config = writeConfig(
-                "debug: false\n" +
-                        "placeholderapi:\n" +
-                        "  enabled: false\n" +
-                        "  fallbacks:\n" +
-                        "    notAvailable: '-'\n" +
-                        "    zero: 'cero'\n" +
-                        "    false: 'no'\n"
+                "configVersion: 7\n" +
+                        "api:\n" +
+                        "  key: \"server-api-key\"\n"
         );
 
         new ConfigMigrator(new TestPlugin(tempDir.toFile()), config).migrate();
 
         String migrated = normalize(read(config));
-        assertTrue(migrated.contains("placeholderapi:\n  enabled: false\n  formats:"));
-        assertTrue(migrated.contains("    unavailable: '-'"));
-        assertTrue(migrated.contains("    numberZero: 'cero'"));
-        assertTrue(migrated.contains("    booleanTrue: \"true\""));
-        assertTrue(migrated.contains("    booleanFalse: 'no'"));
-        assertTrue(migrated.contains("    dateTime: \"dd/MM/yyyy HH:mm\""));
-        assertFalse(migrated.contains("fallbacks:"));
-        assertFalse(migrated.contains("notAvailable:"));
-        assertFalse(migrated.contains("\n\n\n"));
+        assertTrue(migrated.contains("  key: \"server-api-key\""));
+        assertTrue(migrated.contains("  readTimeout: 5000"));
     }
 
     @Test
-    void insertsSimpleKeysWithoutBlankLinesBetweenThem() throws Exception {
+    void preservesCustomCommandList() throws Exception {
+        File config = writeConfig(
+                "rewards:\n" +
+                        "  commands:\n" +
+                        "    - eco give {0} 100\n" +
+                        "    - lp user {0} parent add voter\n"
+        );
+
+        new ConfigMigrator(new TestPlugin(tempDir.toFile()), config).migrate();
+
+        String migrated = normalize(read(config));
+        assertTrue(migrated.contains("  commands:\n" +
+                "    - \"eco give {0} 100\"\n" +
+                "    - \"lp user {0} parent add voter\""));
+    }
+
+    @Test
+    void rebuildsOldStructureUsingTemplateComments() throws Exception {
         File config = writeConfig(
                 "debug: false\n" +
                         "api:\n" +
                         "  key: key\n" +
-                        "\n" +
-                        "streakRewards:\n" +
-                        "  3:\n" +
-                        "    - \"give %player% diamond 1\"\n" +
-                        "\n" +
+                        "# Old local comment\n" +
                         "tag: \"custom\"\n"
         );
 
         new ConfigMigrator(new TestPlugin(tempDir.toFile()), config).migrate();
 
         String migrated = normalize(read(config));
-        assertTrue(migrated.contains("  readTimeout: 5000"));
-        assertTrue(migrated.contains("  connectTimeout: 5000"));
-        assertTrue(migrated.contains("  retries: 2"));
-        assertTrue(migrated.contains("  retryBackoffMillis: 250"));
+        assertTrue(migrated.contains("# 40ServidoresMC configuration"));
+        assertTrue(migrated.contains("# Retry failed transient requests such as timeouts and 5xx responses."));
+        assertFalse(migrated.contains("# Old local comment"));
+        assertTrue(migrated.contains("  prefix: \"custom\""));
         assertTrue(migrated.contains("cache:\n"));
         assertTrue(migrated.contains("  # Cache API responses to reduce HTTP requests."));
-        assertTrue(migrated.contains("  enabled: true"));
-        assertTrue(migrated.contains("  serverStatsTtlSeconds: 60"));
-        assertTrue(migrated.contains("  voteCheckNegativeTtlSeconds: 5"));
         assertTrue(migrated.contains("autoReward:\n" +
                 "  # Recheck votes shortly after a player uses the vote command.\n" +
                 "  enabled: true\n" +
@@ -140,9 +141,7 @@ public class TestConfigMigrator {
                 "    - 10\n" +
                 "    - 30\n" +
                 "    - 60"));
-        assertFalse(migrated.contains("readTimeout: 5000\n\n  connectTimeout: 5000"));
-        assertFalse(migrated.contains("retries: 2\n\n  retryBackoffMillis: 250"));
-        assertFalse(migrated.contains("# %40servidoresmc_"));
+        assertFalse(migrated.contains("\n\n\n"));
     }
 
     @Test
@@ -163,6 +162,24 @@ public class TestConfigMigrator {
     }
 
     @Test
+    void extraKeysAreOnlyKeptInBackupAndWarned() throws Exception {
+        File config = writeConfig(
+                "debug: false\n" +
+                        "unknown:\n" +
+                        "  value: keep-me\n"
+        );
+        TestPlugin plugin = new TestPlugin(tempDir.toFile());
+
+        new ConfigMigrator(plugin, config).migrate();
+
+        String migrated = normalize(read(config));
+        assertFalse(migrated.contains("unknown:"));
+        assertFalse(migrated.contains("keep-me"));
+        assertTrue(plugin.errors.get(0).contains("unknown"));
+        assertEquals(1, backupCount());
+    }
+
+    @Test
     void repeatedMigrationDoesNotDuplicateKeys() throws Exception {
         File config = writeConfig(
                 "debug: false\n" +
@@ -177,6 +194,30 @@ public class TestConfigMigrator {
 
         assertEquals(firstRun, secondRun);
         assertEquals(1, backupCount());
+    }
+
+    @Test
+    void pathTrackerBuildsNestedPathsFromTwoSpaceIndentation() {
+        YamlPathTracker tracker = new YamlPathTracker();
+
+        assertEquals("api", tracker.pathFor(0, "api"));
+        tracker.put(0, "api");
+        assertEquals("api.key", tracker.pathFor(2, "key"));
+        tracker.put(0, "messages");
+        assertEquals("messages.prefix", tracker.pathFor(2, "prefix"));
+    }
+
+    @Test
+    void rendererFormatsListsWithTwoSpaces() throws Exception {
+        YamlConfiguration user = new YamlConfiguration();
+        user.loadFromString("rewards:\n  commands:\n    - say hi\n");
+        YamlConfiguration defaults = new YamlConfiguration();
+        defaults.loadFromString("rewards:\n  commands:\n    - default\n");
+        ConfigTemplate template = ConfigTemplate.parse("rewards:\n  commands:\n    - default\n");
+
+        String rendered = normalize(new ConfigTemplateRenderer(template, new ConfigValueResolver(user, defaults)).render());
+
+        assertEquals("rewards:\n  commands:\n    - \"say hi\"\n", rendered);
     }
 
     @Test
