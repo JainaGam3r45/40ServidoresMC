@@ -65,20 +65,53 @@ public class TestConfigMigrator {
         File config = writeConfig(
                 "debug: false\n" +
                         "placeholderapi:\n" +
-                        "    enabled: false\n" +
-                        "    fallbacks:\n" +
-                        "        notAvailable: '-'\n"
+                        "  enabled: false\n" +
+                        "  fallbacks:\n" +
+                        "    notAvailable: '-'\n"
         );
 
         new ConfigMigrator(new TestPlugin(tempDir.toFile()), config).migrate();
 
         String migrated = normalize(read(config));
-        assertTrue(migrated.contains("    fallbacks:\n" +
-                "        notAvailable: '-'\n" +
-                "\n" +
-                "        zero: \"0\""));
-        assertTrue(migrated.contains("        false: \"false\""));
+        assertTrue(migrated.contains("  fallbacks:\n" +
+                "    notAvailable: '-'\n" +
+                "    zero: \"0\"\n" +
+                "    false: \"false\""));
         assertFalse(migrated.contains("\n\n\n"));
+    }
+
+    @Test
+    void insertsSimpleKeysWithoutBlankLinesBetweenThem() throws Exception {
+        File config = writeConfig(
+                "debug: false\n" +
+                        "clave: key\n" +
+                        "\n" +
+                        "streakRewards:\n" +
+                        "  3:\n" +
+                        "    - \"give %player% diamond 1\"\n" +
+                        "\n" +
+                        "tag: \"custom\"\n"
+        );
+
+        new ConfigMigrator(new TestPlugin(tempDir.toFile()), config).migrate();
+
+        String migrated = normalize(read(config));
+        assertTrue(migrated.contains("readTimeOut: 5000\n" +
+                "connectTimeOut: 5000\n" +
+                "httpRetries: 2\n" +
+                "httpRetryBackoff: 250"));
+        assertTrue(migrated.contains("cache:\n" +
+                "  enabled: true\n" +
+                "  serverStatsTtlSeconds: 60\n" +
+                "  voteCheckNegativeTtlSeconds: 5"));
+        assertTrue(migrated.contains("autoReward:\n" +
+                "  enabled: true\n" +
+                "  recheckDelaysSeconds:\n" +
+                "    - 10\n" +
+                "    - 30\n" +
+                "    - 60"));
+        assertFalse(migrated.contains("readTimeOut: 5000\n\nconnectTimeOut: 5000"));
+        assertFalse(migrated.contains("# %40servidoresmc_"));
     }
 
     @Test

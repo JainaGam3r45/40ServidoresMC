@@ -19,6 +19,8 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 public class ConfigMigrator {
 
@@ -122,38 +124,66 @@ public class ConfigMigrator {
     }
 
     private String patchConfig(String userConfig, YamlDocument templateDocument, YamlDocument userDocument, List<KeyBlock> missingBlocks) {
-        List<Insertion> insertions = new ArrayList<>();
+        Map<Integer, List<Insertion>> insertions = new TreeMap<>(Collections.reverseOrder());
         for (KeyBlock block : missingBlocks) {
-            insertions.add(resolveInsertion(userDocument, templateDocument, block));
+            Insertion insertion = resolveInsertion(userDocument, templateDocument, block);
+            insertions.computeIfAbsent(insertion.offset, ignored -> new ArrayList<>()).add(insertion);
         }
 
-        Collections.sort(insertions);
         StringBuilder builder = new StringBuilder(userConfig);
         boolean addedFallbackHeader = false;
-        for (int i = insertions.size() - 1; i >= 0; i--) {
-            Insertion insertion = insertions.get(i);
-            String text = insertion.text;
-            if (insertion.fallback && !addedFallbackHeader) {
-                text = FALLBACK_HEADER + System.lineSeparator() + text;
-                addedFallbackHeader = true;
+        for (Map.Entry<Integer, List<Insertion>> entry : insertions.entrySet()) {
+            boolean includeFallbackHeader = false;
+            for (Insertion insertion : entry.getValue()) {
+                if (insertion.fallback && !addedFallbackHeader) {
+                    includeFallbackHeader = true;
+                    addedFallbackHeader = true;
+                    break;
+                }
             }
-            builder.insert(insertion.offset, text);
+            builder.insert(entry.getKey(), renderInsertionGroup(entry.getValue(), includeFallbackHeader));
         }
+        return builder.toString();
+    }
+
+    private String renderInsertionGroup(List<Insertion> insertions, boolean includeFallbackHeader) {
+        String lineSeparator = System.lineSeparator();
+        StringBuilder builder = new StringBuilder();
+        if (includeFallbackHeader) {
+            builder.append(lineSeparator).append(FALLBACK_HEADER).append(lineSeparator);
+        }
+
+        for (Insertion insertion : insertions) {
+            String text = cleanInsertedBlock(insertion.text);
+            if (text.isEmpty()) {
+                continue;
+            }
+            if (builder.length() == 0 && insertion.leadingBlank) {
+                builder.append(lineSeparator);
+            } else if (builder.length() > 0 && builder.charAt(builder.length() - 1) != '\n') {
+                builder.append(lineSeparator);
+            }
+            builder.append(text);
+            if (!text.endsWith("\n")) {
+                builder.append(lineSeparator);
+            }
+        }
+
         return builder.toString();
     }
 
     private Insertion resolveInsertion(YamlDocument userDocument, YamlDocument templateDocument, KeyBlock block) {
         KeyBlock parent = userDocument.blocks.get(block.parentPath);
         if (parent != null) {
-            return new Insertion(userDocument.offsetForLine(parent.blockEnd), ensureWrapped(block.text), false);
+            return new Insertion(userDocument.offsetForLine(parent.blockEnd), block.text, startsWithBlankLine(block.text), false);
         }
 
         KeyBlock previous = findPreviousTemplateSibling(userDocument, templateDocument, block);
         if (previous != null) {
-            return new Insertion(userDocument.offsetForLine(previous.blockEnd), ensureWrapped(block.text), false);
+            return new Insertion(userDocument.offsetForLine(previous.blockEnd), block.text, startsWithBlankLine(block.text), false);
         }
 
-        return new Insertion(userDocument.endOffset(), ensureWrapped(block.text), true);
+        return new Insertion(userDocument.endOffset(), block.text, true, true);
     }
 
     private KeyBlock findPreviousTemplateSibling(YamlDocument userDocument, YamlDocument templateDocument, KeyBlock block) {
@@ -196,16 +226,20 @@ public class ConfigMigrator {
         return builder.toString();
     }
 
-    private String ensureWrapped(String text) {
-        String lineSeparator = System.lineSeparator();
-        String wrapped = text;
-        if (!wrapped.startsWith(lineSeparator)) {
-            wrapped = lineSeparator + wrapped;
+    private String cleanInsertedBlock(String text) {
+        String normalized = text.replace("\r\n", "\n").replace('\r', '\n');
+        while (normalized.startsWith("\n")) {
+            normalized = normalized.substring(1);
         }
-        if (!wrapped.endsWith(lineSeparator)) {
-            wrapped = wrapped + lineSeparator;
+        while (normalized.endsWith("\n\n")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
         }
-        return wrapped;
+        return normalized;
+    }
+
+    private boolean startsWithBlankLine(String text) {
+        String normalized = text.replace("\r\n", "\n").replace('\r', '\n');
+        return normalized.startsWith("\n");
     }
 
     private String normalizeBlankLines(String text) {
@@ -420,21 +454,18 @@ public class ConfigMigrator {
         }
     }
 
-    private static class Insertion implements Comparable<Insertion> {
+    private static class Insertion {
 
         private final int offset;
         private final String text;
+        private final boolean leadingBlank;
         private final boolean fallback;
 
-        private Insertion(int offset, String text, boolean fallback) {
+        private Insertion(int offset, String text, boolean leadingBlank, boolean fallback) {
             this.offset = offset;
             this.text = text;
+            this.leadingBlank = leadingBlank;
             this.fallback = fallback;
-        }
-
-        @Override
-        public int compareTo(Insertion other) {
-            return Integer.compare(this.offset, other.offset);
         }
     }
 }
