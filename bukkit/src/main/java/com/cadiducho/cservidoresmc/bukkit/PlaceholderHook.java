@@ -53,6 +53,9 @@ public class PlaceholderHook extends PlaceholderExpansion {
         if ("server_rank".equals(placeholder)) {
             return serverStats == null || serverStats.getServerName() == null ? notAvailable() : String.valueOf(serverStats.getPosition());
         }
+        if ("server_name".equals(placeholder)) {
+            return serverStats == null || serverStats.getServerName() == null ? notAvailable() : serverStats.getServerName();
+        }
         if ("server_votes".equals(placeholder)) {
             return serverStats == null || serverStats.getTotalVotes() == null ? zero() : String.valueOf(serverStats.getTotalVotes());
         }
@@ -64,6 +67,12 @@ public class PlaceholderHook extends PlaceholderExpansion {
         }
         if ("rewarded_today".equals(placeholder)) {
             return serverStats == null ? zero() : String.valueOf(serverStats.getRewardedDayVotes());
+        }
+        if ("votes_week".equals(placeholder)) {
+            return serverStats == null ? zero() : String.valueOf(serverStats.getWeekVotes());
+        }
+        if ("rewarded_week".equals(placeholder)) {
+            return serverStats == null ? zero() : String.valueOf(serverStats.getRewardedWeekVotes());
         }
         if ("api_status".equals(placeholder)) {
             return bukkitPlugin.getApiClient().apiStatus();
