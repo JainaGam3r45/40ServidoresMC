@@ -137,6 +137,7 @@ public class ConfigMigrator {
         StringBuilder builder = new StringBuilder(userConfig);
         boolean addedFallbackHeader = false;
         for (Map.Entry<Integer, List<Insertion>> entry : insertions.entrySet()) {
+            sortInsertions(entry.getValue());
             boolean includeFallbackHeader = false;
             for (Insertion insertion : entry.getValue()) {
                 if (insertion.fallback && !addedFallbackHeader) {
@@ -150,14 +151,31 @@ public class ConfigMigrator {
         return builder.toString();
     }
 
+    private void sortInsertions(List<Insertion> insertions) {
+        Collections.sort(insertions, (left, right) -> {
+            if (left.fallback != right.fallback) {
+                return left.fallback ? 1 : -1;
+            }
+            return Integer.compare(right.indent, left.indent);
+        });
+    }
+
     private String renderInsertionGroup(List<Insertion> insertions, boolean includeFallbackHeader) {
         String lineSeparator = System.lineSeparator();
         StringBuilder builder = new StringBuilder();
-        if (includeFallbackHeader) {
-            builder.append(lineSeparator).append(FALLBACK_HEADER).append(lineSeparator);
-        }
+        boolean addedFallbackHeader = false;
 
         for (Insertion insertion : insertions) {
+            if (insertion.fallback && includeFallbackHeader && !addedFallbackHeader) {
+                if (builder.length() == 0) {
+                    builder.append(lineSeparator);
+                } else if (builder.charAt(builder.length() - 1) != '\n') {
+                    builder.append(lineSeparator);
+                }
+                builder.append(FALLBACK_HEADER).append(lineSeparator);
+                addedFallbackHeader = true;
+            }
+
             String text = cleanInsertedBlock(insertion.text);
             if (text.isEmpty()) {
                 continue;
@@ -254,6 +272,16 @@ public class ConfigMigrator {
         String key = lastPathPart(legacyPath.currentPath);
         StringBuilder replacement = new StringBuilder();
         appendLeadingComments(targetBlock.text, replacement, lineSeparator);
+        if (legacyPath.placeholderFormats) {
+            Map<String, String> formats = placeholderFormats(sourceBlock.text);
+            replacement.append(indent).append(key).append(':').append(lineSeparator);
+            replacement.append(indent).append("  unavailable: ").append(formats.get("unavailable")).append(lineSeparator);
+            replacement.append(indent).append("  numberZero: ").append(formats.get("numberZero")).append(lineSeparator);
+            replacement.append(indent).append("  booleanTrue: \"true\"").append(lineSeparator);
+            replacement.append(indent).append("  booleanFalse: ").append(formats.get("booleanFalse")).append(lineSeparator);
+            replacement.append(indent).append("  dateTime: \"dd/MM/yyyy HH:mm\"").append(lineSeparator);
+            return replacement.toString();
+        }
         if (legacyPath.list) {
             List<String> items = listItems(sourceBlock.text);
             replacement.append(indent).append(key).append(':').append(lineSeparator);
@@ -287,27 +315,61 @@ public class ConfigMigrator {
     private String removeMigratedLegacyPaths(String text, YamlConfiguration originalYaml) {
         String migrated = text;
         for (LegacyPath legacyPath : LEGACY_PATHS) {
-            if (!originalYaml.isSet(legacyPath.legacyPath)) {
-                continue;
-            }
-
             YamlDocument document = YamlDocument.parse(migrated);
             if (!document.blocks.containsKey(legacyPath.currentPath)) {
                 continue;
             }
 
             KeyBlock legacyBlock = document.blocks.get(legacyPath.legacyPath);
-            if (legacyBlock != null) {
+            if (legacyBlock != null && originalYaml.isSet(legacyPath.legacyPath)) {
                 migrated = removeBlock(migrated, document, legacyBlock);
             }
         }
-        return migrated;
+        return removeEmptySection(migrated, "placeholderapi.fallbacks");
+    }
+
+    private Map<String, String> placeholderFormats(String blockText) {
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("unavailable", "\"N/A\"");
+        values.put("numberZero", "\"0\"");
+        values.put("booleanFalse", "\"false\"");
+
+        String[] lines = blockText.replace("\r\n", "\n").replace('\r', '\n').split("\n");
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("notAvailable:")) {
+                values.put("unavailable", trimmed.substring("notAvailable:".length()).trim());
+            } else if (trimmed.startsWith("zero:")) {
+                values.put("numberZero", trimmed.substring("zero:".length()).trim());
+            } else if (trimmed.startsWith("false:")) {
+                values.put("booleanFalse", trimmed.substring("false:".length()).trim());
+            }
+        }
+        return values;
     }
 
     private String removeBlock(String text, YamlDocument document, KeyBlock block) {
         int start = document.offsetForLine(block.blockStart);
         int end = block.blockEnd < document.lineOffsets.size() ? document.offsetForLine(block.blockEnd) : text.length();
         return text.substring(0, start) + text.substring(end);
+    }
+
+    private String removeEmptySection(String text, String path) {
+        YamlDocument document = YamlDocument.parse(text);
+        KeyBlock block = document.blocks.get(path);
+        if (block == null || hasChildBlock(document, block)) {
+            return text;
+        }
+        return removeBlock(text, document, block);
+    }
+
+    private boolean hasChildBlock(YamlDocument document, KeyBlock block) {
+        for (KeyBlock candidate : document.blocks.values()) {
+            if (block.path.equals(candidate.parentPath)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String rawScalarValue(String blockText) {
@@ -373,6 +435,7 @@ public class ConfigMigrator {
         paths.add(new LegacyPath("broadcast.activado", "broadcast.enabled", false));
         paths.add(new LegacyPath("broadcast.mensajeBroadcast", "broadcast.message", false));
         paths.add(new LegacyPath("comandosCustom", "rewards.commands", true));
+        paths.add(new LegacyPath("placeholderapi.fallbacks", "placeholderapi.formats", false, true));
         return paths;
     }
 
@@ -626,12 +689,26 @@ public class ConfigMigrator {
         private final String text;
         private final boolean leadingBlank;
         private final boolean fallback;
+        private final int indent;
 
         private Insertion(int offset, String text, boolean leadingBlank, boolean fallback) {
             this.offset = offset;
             this.text = text;
             this.leadingBlank = leadingBlank;
             this.fallback = fallback;
+            this.indent = detectIndent(text);
+        }
+
+        private int detectIndent(String text) {
+            String normalized = text.replace("\r\n", "\n").replace('\r', '\n');
+            String[] lines = normalized.split("\n");
+            for (String line : lines) {
+                String trimmed = line.trim();
+                if (!trimmed.isEmpty() && !trimmed.startsWith("#")) {
+                    return YamlDocument.countIndent(line);
+                }
+            }
+            return 0;
         }
     }
 
@@ -640,11 +717,17 @@ public class ConfigMigrator {
         private final String legacyPath;
         private final String currentPath;
         private final boolean list;
+        private final boolean placeholderFormats;
 
         private LegacyPath(String legacyPath, String currentPath, boolean list) {
+            this(legacyPath, currentPath, list, false);
+        }
+
+        private LegacyPath(String legacyPath, String currentPath, boolean list, boolean placeholderFormats) {
             this.legacyPath = legacyPath;
             this.currentPath = currentPath;
             this.list = list;
+            this.placeholderFormats = placeholderFormats;
         }
     }
 }

@@ -88,16 +88,22 @@ public class TestConfigMigrator {
                         "placeholderapi:\n" +
                         "  enabled: false\n" +
                         "  fallbacks:\n" +
-                        "    notAvailable: '-'\n"
+                        "    notAvailable: '-'\n" +
+                        "    zero: 'cero'\n" +
+                        "    false: 'no'\n"
         );
 
         new ConfigMigrator(new TestPlugin(tempDir.toFile()), config).migrate();
 
         String migrated = normalize(read(config));
-        assertTrue(migrated.contains("  fallbacks:"));
-        assertTrue(migrated.contains("    notAvailable: '-'"));
-        assertTrue(migrated.contains("    zero: \"0\""));
-        assertTrue(migrated.contains("    false: \"false\""));
+        assertTrue(migrated.contains("placeholderapi:\n  enabled: false\n  formats:"));
+        assertTrue(migrated.contains("    unavailable: '-'"));
+        assertTrue(migrated.contains("    numberZero: 'cero'"));
+        assertTrue(migrated.contains("    booleanTrue: \"true\""));
+        assertTrue(migrated.contains("    booleanFalse: 'no'"));
+        assertTrue(migrated.contains("    dateTime: \"dd/MM/yyyy HH:mm\""));
+        assertFalse(migrated.contains("fallbacks:"));
+        assertFalse(migrated.contains("notAvailable:"));
         assertFalse(migrated.contains("\n\n\n"));
     }
 

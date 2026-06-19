@@ -51,7 +51,7 @@ La integración con PlaceholderAPI es opcional. Si PlaceholderAPI no está insta
 | `%40servidoresmc_api_status%` | Estado de la última llamada API: `ok`, `error` o `unknown`. | `ok` |
 | `%40servidoresmc_cache_age%` | Edad de la caché de estadísticas del servidor. | `45s` |
 
-Cuando un dato todavía no existe, el placeholder devuelve `N/A`, `0` o `false`, según corresponda. Estos valores se pueden cambiar en `placeholderapi.fallbacks`.
+Cuando un dato todavía no existe, el placeholder devuelve `N/A`, `0` o `false`, según corresponda. Los formatos configurables viven en `placeholderapi.formats`.
 
 QA manual con PlaceholderAPI
 ------------

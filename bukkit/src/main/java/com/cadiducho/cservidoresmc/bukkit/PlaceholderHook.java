@@ -91,7 +91,7 @@ public class PlaceholderHook extends PlaceholderExpansion {
             return lastVoteAt <= 0L ? notAvailable() : formatDuration(System.currentTimeMillis() - lastVoteAt);
         }
         if ("player_can_vote".equals(placeholder)) {
-            return voteReminderService == null ? falseValue() : String.valueOf(voteReminderService.canVote(playerName));
+            return voteReminderService == null ? booleanValue(false) : booleanValue(voteReminderService.canVote(playerName));
         }
         if ("player_next_vote_in".equals(placeholder)) {
             long nextVoteIn = voteReminderService == null ? -1L : voteReminderService.nextVoteInMillis(playerName);
@@ -112,7 +112,7 @@ public class PlaceholderHook extends PlaceholderExpansion {
             return nextReward <= 0 ? notAvailable() : String.valueOf(nextReward);
         }
         if ("player_pending_reward".equals(placeholder)) {
-            return rewardService == null ? falseValue() : String.valueOf(rewardService.hasPendingReward(playerName));
+            return rewardService == null ? booleanValue(false) : booleanValue(rewardService.hasPendingReward(playerName));
         }
 
         return null;
@@ -120,7 +120,7 @@ public class PlaceholderHook extends PlaceholderExpansion {
 
     private String playerFallback(String placeholder) {
         if ("player_can_vote".equals(placeholder) || "player_pending_reward".equals(placeholder)) {
-            return falseValue();
+            return booleanValue(false);
         }
         if ("player_streak".equals(placeholder) || "player_best_streak".equals(placeholder)) {
             return zero();
@@ -155,18 +155,25 @@ public class PlaceholderHook extends PlaceholderExpansion {
     }
 
     private String formatDate(long millis) {
-        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ROOT).format(new Date(millis));
+        return new SimpleDateFormat(dateTimeFormat(), Locale.ROOT).format(new Date(millis));
     }
 
     private String notAvailable() {
-        return bukkitPlugin.getCSConfiguration().getString("placeholderapi.fallbacks.notAvailable", "N/A");
+        return bukkitPlugin.getCSConfiguration().getString("placeholderapi.formats.unavailable", "placeholderapi.fallbacks.notAvailable", "N/A");
     }
 
     private String zero() {
-        return bukkitPlugin.getCSConfiguration().getString("placeholderapi.fallbacks.zero", "0");
+        return bukkitPlugin.getCSConfiguration().getString("placeholderapi.formats.numberZero", "placeholderapi.fallbacks.zero", "0");
     }
 
-    private String falseValue() {
-        return bukkitPlugin.getCSConfiguration().getString("placeholderapi.fallbacks.false", "false");
+    private String booleanValue(boolean value) {
+        if (value) {
+            return bukkitPlugin.getCSConfiguration().getString("placeholderapi.formats.booleanTrue", "true");
+        }
+        return bukkitPlugin.getCSConfiguration().getString("placeholderapi.formats.booleanFalse", "placeholderapi.fallbacks.false", "false");
+    }
+
+    private String dateTimeFormat() {
+        return bukkitPlugin.getCSConfiguration().getString("placeholderapi.formats.dateTime", "dd/MM/yyyy HH:mm");
     }
 }

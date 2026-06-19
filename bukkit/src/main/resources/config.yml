@@ -70,7 +70,9 @@ voteReminder:
 placeholderapi:
   # Optional PlaceholderAPI integration and fallback values.
   enabled: true
-  fallbacks:
-    notAvailable: "N/A"
-    zero: "0"
-    false: "false"
+  formats:
+    unavailable: "N/A"
+    numberZero: "0"
+    booleanTrue: "true"
+    booleanFalse: "false"
+    dateTime: "dd/MM/yyyy HH:mm"
