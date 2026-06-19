@@ -56,7 +56,7 @@ public class TestConfigMigrator {
         assertTrue(migrated.contains("# 40ServidoresMC configuration"));
         assertFalse(migrated.contains("# Comentario personalizado"));
         assertTrue(migrated.contains("debug: true"));
-        assertTrue(migrated.contains("configVersion: 7"));
+        assertTrue(migrated.contains("configVersion: 8"));
         assertTrue(migrated.contains("api:\n"));
         assertTrue(migrated.contains("  key: \"personalizada\""));
         assertTrue(migrated.contains("  readTimeout: 7000"));
@@ -67,6 +67,10 @@ public class TestConfigMigrator {
         assertTrue(migrated.contains("  prefix: \"&8[&bCustom&8]\""));
         assertTrue(migrated.contains("  voteClaim: \"&dPremio propio\""));
         assertTrue(migrated.contains("  alreadyRewarded: \"&aYa reclamaste. Vuelve en %time%.\""));
+        assertTrue(migrated.contains("updater:\n"));
+        assertTrue(migrated.contains("  notifyConsole: true"));
+        assertTrue(migrated.contains("  notifyAdminsOnJoin: true"));
+        assertTrue(migrated.contains("  joinNotificationDelaySeconds: 3"));
         assertTrue(migrated.contains("broadcast:\n"));
         assertTrue(migrated.contains("  enabled: false"));
         assertTrue(migrated.contains("  message: \"&bMensaje propio\""));
@@ -86,7 +90,7 @@ public class TestConfigMigrator {
     @Test
     void preservesCustomApiKey() throws Exception {
         File config = writeConfig(
-                "configVersion: 7\n" +
+                "configVersion: 8\n" +
                         "api:\n" +
                         "  key: \"server-api-key\"\n"
         );
@@ -147,7 +151,7 @@ public class TestConfigMigrator {
     @Test
     void existingNewKeysAreNotOverwrittenByLegacyKeys() throws Exception {
         File config = writeConfig(
-                "configVersion: 7\n" +
+                "configVersion: 8\n" +
                         "api:\n" +
                         "  key: \"new-key\"\n" +
                         "clave: old-key\n"
@@ -173,7 +177,7 @@ public class TestConfigMigrator {
         new ConfigMigrator(new TestPlugin(tempDir.toFile()), config).migrate();
 
         String migrated = normalize(read(config));
-        assertTrue(migrated.contains("configVersion: 7"));
+        assertTrue(migrated.contains("configVersion: 8"));
         assertFalse(migrated.contains("configVersion: 3"));
         assertTrue(migrated.contains("  key: \"server-key\""));
     }
@@ -189,7 +193,7 @@ public class TestConfigMigrator {
         new ConfigMigrator(new TestPlugin(tempDir.toFile()), config).migrate();
 
         String migrated = normalize(read(config));
-        assertTrue(migrated.contains("configVersion: 7"));
+        assertTrue(migrated.contains("configVersion: 8"));
         assertFalse(migrated.contains("configVer:"));
         assertFalse(migrated.contains("configVersion: 3"));
     }

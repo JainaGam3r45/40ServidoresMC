@@ -1,7 +1,7 @@
 # 40ServidoresMC configuration
 # Documentation: https://github.com/JainaGam3r45/40ServidoresMC
 
-configVersion: 7
+configVersion: 8
 debug: false
 
 api:
@@ -66,6 +66,13 @@ voteReminder:
   enabled: true
   message: "&aYou can vote again on 40ServidoresMC. Use &2/vote40&a to receive your reward."
   checkIntervalSeconds: 300
+
+updater:
+  # Notify the console when a new plugin version is available.
+  notifyConsole: true
+  # Notify administrators when they join and an update is already known.
+  notifyAdminsOnJoin: true
+  joinNotificationDelaySeconds: 3
 
 placeholderapi:
   # Optional PlaceholderAPI integration and fallback values.

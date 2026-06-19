@@ -54,7 +54,7 @@ public interface CSPlugin {
      * @return la versión de la configuración
      */
     default int configVersion() {
-        return 7;
+        return 8;
     }
 
     /**
@@ -183,6 +183,10 @@ public interface CSPlugin {
                 task.run();
             }
         });
+    }
+
+    default void sendFormattedMessage(CSCommandSender sender, String message) {
+        sender.sendMessage(message);
     }
 
     /**

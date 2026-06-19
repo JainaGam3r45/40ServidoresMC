@@ -80,6 +80,7 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
          */
         debugLog("Registrando comandos y eventos...");
         registerCommands();
+        getServer().getPluginManager().registerEvents(new BukkitUpdateJoinListener(instance), instance);
 
         installPlaceholderAPI();
         
@@ -226,6 +227,15 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
     @Override
     public void runSync(Runnable task) {
         getServer().getScheduler().runTask(instance, task);
+    }
+
+    @Override
+    public void sendFormattedMessage(CSCommandSender sender, String message) {
+        if (sender != null && sender.isConsole()) {
+            getServer().getConsoleSender().sendMessage(ChatColor.translateAlternateColorCodes('&', message));
+            return;
+        }
+        CSPlugin.super.sendFormattedMessage(sender, message);
     }
 
     @Override

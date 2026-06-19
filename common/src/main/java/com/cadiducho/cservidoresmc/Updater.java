@@ -7,17 +7,22 @@ import com.cadiducho.cservidoresmc.http.HttpConfig;
 import com.cadiducho.cservidoresmc.http.HttpLogger;
 import com.cadiducho.cservidoresmc.http.HttpRequester;
 import com.cadiducho.cservidoresmc.model.updater.GitHubReleaseInfo;
+import com.cadiducho.cservidoresmc.model.updater.UpdateCheckResult;
+import com.cadiducho.cservidoresmc.model.updater.UpdateCheckStatus;
+import com.cadiducho.cservidoresmc.model.updater.UpdateNoticeFormatter;
 import com.cadiducho.cservidoresmc.model.updater.UpdaterInfo;
 import com.google.gson.Gson;
 
 import java.io.IOException;
 import java.net.URL;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 /**
@@ -29,14 +34,19 @@ public class Updater {
     private static final String RELEASE_URL = "https://api.github.com/repos/JainaGam3r45/40ServidoresMC/releases/latest";
     private static final String UPDATE_URL = "https://raw.githubusercontent.com/JainaGam3r45/40ServidoresMC/development/etc/v3.json";
     private static final String RELEASE_TAG_URL = "https://github.com/JainaGam3r45/40ServidoresMC/releases/tag/v%s";
+    private static final String ERROR = "Error obteniendo la versión.";
 
-    private static String versionInstalada, versionMinecraft;
-    private static CSPlugin plugin;
+    private final CSPlugin plugin;
+    private final String installedVersion;
+    private final String minecraftVersion;
     private final HttpRequester httpRequester;
     private final Gson gson;
     private final String releaseUrl;
     private final String updateUrl;
     private final Executor executor;
+    private final UpdateNoticeFormatter noticeFormatter = new UpdateNoticeFormatter();
+    private final AtomicReference<UpdateCheckResult> cachedResult;
+    private final AtomicReference<CompletableFuture<UpdateCheckResult>> inFlight = new AtomicReference<>();
 
     public Updater(CSPlugin instance, String vInstalada, String vMinecraft) {
         this(instance, vInstalada, vMinecraft, new HttpRequester(), new Gson(), RELEASE_URL, UPDATE_URL, instance.getAsyncExecutor());
@@ -47,19 +57,16 @@ public class Updater {
     }
 
     Updater(CSPlugin instance, String vInstalada, String vMinecraft, HttpRequester httpRequester, Gson gson, String releaseUrl, String updateUrl, Executor executor) {
-        plugin = instance;
-        versionInstalada = vInstalada;
-        versionMinecraft = vMinecraft;
+        this.plugin = instance;
+        this.installedVersion = vInstalada;
+        this.minecraftVersion = vMinecraft;
         this.httpRequester = httpRequester;
         this.gson = gson;
         this.releaseUrl = releaseUrl;
         this.updateUrl = updateUrl;
         this.executor = executor == null ? ForkJoinPool.commonPool() : executor;
+        this.cachedResult = new AtomicReference<>(UpdateCheckResult.pending(vInstalada));
     }
-    
-    private final String ERROR = "Error obteniendo la versión.";
-    private final String UPDATED = "Versión actualizada";
-    private final String NEW_VERSION = "Versión desactualizada. Nueva versión: %s. Changelog: %s. Descarga en: %s";
 
     /**
      * Comprobar si hay nueva versión
@@ -75,73 +82,167 @@ public class Updater {
      * @param confirmation Si es true, se avisará si no hay nueva versión
      */
     public void checkearVersion(CSCommandSender sender, boolean confirmation) {
-        if (sender == null) {
-            // Se hace al iniciar el plugin
-            sender = new CSConsoleSender(plugin);
-        }
-        plugin.debugLog("Buscando nueva versión para Minecraft " + versionMinecraft + "...");
+        boolean automaticConsoleCheck = sender == null;
+        CSCommandSender finalSender = automaticConsoleCheck ? new CSConsoleSender(plugin) : sender;
 
-        final CSCommandSender finalSender = sender;
-        fetchLatestRelease().thenAccept((GitHubReleaseInfo releaseInfo) -> {
+        plugin.debugLog("Buscando nueva versión para Minecraft " + minecraftVersion + "...");
+        checkForUpdates().whenComplete((result, error) -> {
             if (!plugin.isActive()) {
                 return;
             }
-            if (releaseInfo == null) {
-                checkLegacyUpdate(finalSender, confirmation);
+
+            UpdateCheckResult finalResult = error == null
+                    ? result
+                    : UpdateCheckResult.error(installedVersion, error.getMessage());
+
+            if (finalResult == null) {
+                finalResult = UpdateCheckResult.error(installedVersion, ERROR);
+            }
+
+            boolean shouldNotifyConsole = !automaticConsoleCheck || notifyConsole();
+            if (!shouldNotifyConsole) {
                 return;
             }
 
-            if (isNewerVersion(releaseInfo.getVersion(), versionInstalada)) {
-                String link = releaseInfo.getHtmlUrl() == null ? String.format(RELEASE_TAG_URL, releaseInfo.getTagName()) : releaseInfo.getHtmlUrl();
-                String format = String.format(NEW_VERSION, releaseInfo.getVersion(), releaseInfo.getDescription(), link);
-                sendIfActive(finalSender, format);
+            if (finalResult.isUpdateAvailable()) {
+                sendLines(finalSender, noticeFormatter.updateAvailable(finalResult));
                 return;
             }
 
-            if (isValidVersion(releaseInfo.getVersion())) {
-                sendIfActive(finalSender, UPDATED);
-                return;
+            if (!automaticConsoleCheck && confirmation) {
+                sendManualResult(finalSender, finalResult);
             }
-
-            checkLegacyUpdate(finalSender, confirmation);
-        }).exceptionally(e -> {
-            if (!plugin.isActive()) {
-                return null;
-            }
-            plugin.debugLog("No se pudo consultar la última release de GitHub: " + e.getMessage());
-            checkLegacyUpdate(finalSender, confirmation);
-            return null;
         });
     }
 
-    private void checkLegacyUpdate(CSCommandSender sender, boolean confirmation) {
-        fetchUpdate().thenAccept((UpdaterInfo updaterInfo) -> {
-            if (!plugin.isActive()) {
-                return;
-            }
-            Optional<Map.Entry<String, String>> recommendedVersion = updaterInfo.getPluginForMinecraft(versionMinecraft);
-            if (recommendedVersion.isPresent()) {
-                String updaterVersion = recommendedVersion.get().getKey();
-                String updateDescription = recommendedVersion.get().getValue();
+    public synchronized CompletableFuture<UpdateCheckResult> checkForUpdates() {
+        CompletableFuture<UpdateCheckResult> current = inFlight.get();
+        if (current != null && !current.isDone()) {
+            return current;
+        }
 
-                if (isNewerVersion(updaterVersion, versionInstalada)) {
-                    String link = String.format(RELEASE_TAG_URL, updaterVersion);
-                    String format = String.format(NEW_VERSION, updaterVersion, updateDescription, link);
-                    sendIfActive(sender, format);
-                } else {
-                    sendIfActive(sender, UPDATED);
-                }
-            } else if (confirmation) {
-                sendIfActive(sender, "No hay versión más moderna recomendada para tu versión de Minecraft.");
-            }
-        }).exceptionally(e -> {
-            if (!plugin.isActive()) {
-                return null;
-            }
-            plugin.log(ERROR + " El servidor continuará iniciando con normalidad.");
-            plugin.debugLog("Causa del updater: " + e.getMessage());
-            return null;
+        CompletableFuture<UpdateCheckResult> check = queryUpdateStatus().thenApply(result -> {
+            cachedResult.set(result);
+            return result;
         });
+        inFlight.set(check);
+        check.whenComplete((result, error) -> {
+            if (error != null) {
+                cachedResult.set(UpdateCheckResult.error(installedVersion, error.getMessage()));
+            }
+            synchronized (Updater.this) {
+                if (inFlight.get() == check) {
+                    inFlight.set(null);
+                }
+            }
+        });
+        return check;
+    }
+
+    public UpdateCheckResult getCachedResult() {
+        return cachedResult.get();
+    }
+
+    public CompletableFuture<UpdateCheckResult> getCurrentCheck() {
+        CompletableFuture<UpdateCheckResult> current = inFlight.get();
+        return current != null && !current.isDone() ? current : null;
+    }
+
+    public boolean sendUpdateNoticeIfAvailable(CSCommandSender sender, UpdateCheckResult result) {
+        if (sender == null || result == null || !result.isUpdateAvailable()) {
+            return false;
+        }
+        sendLines(sender, noticeFormatter.updateAvailable(result));
+        return true;
+    }
+
+    public boolean notifyAdminsOnJoin() {
+        return plugin.getCSConfiguration().getBoolean("updater.notifyAdminsOnJoin", true);
+    }
+
+    public int joinNotificationDelaySeconds() {
+        int seconds = plugin.getCSConfiguration().getInt("updater.joinNotificationDelaySeconds", 3);
+        if (seconds < 0) {
+            return 0;
+        }
+        return Math.min(seconds, 30);
+    }
+
+    public UpdateNoticeFormatter getNoticeFormatter() {
+        return noticeFormatter;
+    }
+
+    private CompletableFuture<UpdateCheckResult> queryUpdateStatus() {
+        return fetchLatestRelease()
+                .handle((releaseInfo, error) -> {
+                    if (error != null) {
+                        plugin.debugLog("No se pudo consultar la última release de GitHub: " + error.getMessage());
+                        return null;
+                    }
+                    return releaseResult(releaseInfo);
+                })
+                .thenCompose(result -> result != null ? completed(result) : fetchLegacyResult())
+                .exceptionally(error -> {
+                    if (plugin.isActive()) {
+                        plugin.log(ERROR + " El servidor continuará iniciando con normalidad.");
+                        plugin.debugLog("Causa del updater: " + error.getMessage());
+                    }
+                    return UpdateCheckResult.error(installedVersion, error.getMessage());
+                });
+    }
+
+    private UpdateCheckResult releaseResult(GitHubReleaseInfo releaseInfo) {
+        if (releaseInfo == null) {
+            return null;
+        }
+
+        String availableVersion = releaseInfo.getVersion();
+        if (isNewerVersion(availableVersion, installedVersion)) {
+            String link = releaseInfo.getHtmlUrl() == null || releaseInfo.getHtmlUrl().trim().isEmpty()
+                    ? String.format(RELEASE_TAG_URL, releaseInfo.getTagName())
+                    : releaseInfo.getHtmlUrl();
+            return UpdateCheckResult.updateAvailable(installedVersion, availableVersion, releaseInfo.getDescription(), link);
+        }
+
+        if (isValidVersion(availableVersion)) {
+            return UpdateCheckResult.upToDate(installedVersion, availableVersion);
+        }
+
+        return null;
+    }
+
+    private CompletableFuture<UpdateCheckResult> fetchLegacyResult() {
+        return fetchUpdate().thenApply(updaterInfo -> {
+            if (updaterInfo == null) {
+                return UpdateCheckResult.error(installedVersion, "La respuesta del updater está vacía.");
+            }
+
+            Optional<Map.Entry<String, String>> recommendedVersion = updaterInfo.getPluginForMinecraft(minecraftVersion);
+            if (!recommendedVersion.isPresent()) {
+                return UpdateCheckResult.upToDate(installedVersion, installedVersion);
+            }
+
+            String updaterVersion = recommendedVersion.get().getKey();
+            String updateDescription = recommendedVersion.get().getValue();
+            if (isNewerVersion(updaterVersion, installedVersion)) {
+                String link = String.format(RELEASE_TAG_URL, updaterVersion);
+                return UpdateCheckResult.updateAvailable(installedVersion, updaterVersion, updateDescription, link);
+            }
+
+            return UpdateCheckResult.upToDate(installedVersion, updaterVersion);
+        });
+    }
+
+    private void sendManualResult(CSCommandSender sender, UpdateCheckResult result) {
+        if (result.getStatus() == UpdateCheckStatus.ERROR) {
+            sendLines(sender, noticeFormatter.error(result));
+            return;
+        }
+        sendLines(sender, noticeFormatter.upToDate(result));
+    }
+
+    private boolean notifyConsole() {
+        return plugin.getCSConfiguration().getBoolean("updater.notifyConsole", true);
     }
 
     private CompletableFuture<GitHubReleaseInfo> fetchLatestRelease() {
@@ -164,7 +265,6 @@ public class Updater {
                 throw new IllegalStateException("Cannot execute Updater fetch: " + e.getMessage(), e);
             }
         });
-
     }
 
     static boolean isNewerVersion(String availableVersion, String installedVersion) {
@@ -219,8 +319,12 @@ public class Updater {
         };
     }
 
-    private void sendIfActive(CSCommandSender sender, String message) {
-        plugin.runSyncIfActive(() -> sender.sendMessageWithTag(message));
+    private void sendLines(CSCommandSender sender, List<String> lines) {
+        plugin.runSyncIfActive(() -> {
+            for (String line : lines) {
+                plugin.sendFormattedMessage(sender, line);
+            }
+        });
     }
 
     private <T> CompletableFuture<T> submitRequest(Supplier<T> supplier) {
@@ -233,4 +337,7 @@ public class Updater {
         }
     }
 
+    private CompletableFuture<UpdateCheckResult> completed(UpdateCheckResult result) {
+        return CompletableFuture.completedFuture(result);
+    }
 }
