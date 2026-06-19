@@ -30,13 +30,13 @@ messages:
 broadcast:
   # Announce vote rewards to all online players.
   enabled: true
-  message: "&eThanks &6{0} &efor voting! They received a reward. Use &6&l/vote40 &eto get yours too."
+  message: "&eThanks &6%player% &efor voting! They received a reward. Use &6&l/vote40 &eto get yours too."
 
 rewards:
   # Commands executed as console when a player receives a vote reward.
   commands:
-    - "minecraft:give {0} minecraft:baked_potato 32"
-    - "minecraft:give {0} minecraft:golden_apple 3"
+    - "minecraft:give %player% minecraft:baked_potato 32"
+    - "minecraft:give %player% minecraft:golden_apple 3"
 
 streakRewards:
   # Extra rewards for consecutive voting streak milestones.

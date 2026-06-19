@@ -114,14 +114,16 @@ public class RewardService {
         sender.sendMessageWithTag(plugin.getCSConfiguration().getString("messages.voteClaim", "mensaje", ""));
 
         for (String command : plugin.getCSConfiguration().customCommandsList()) {
-            String parsedCommand = command.replace("{0}", player);
+            String parsedCommand = PlayerPlaceholders.applyPlayer(command, player);
             plugin.runSync(() -> plugin.dispatchCommand(parsedCommand));
         }
 
         plugin.getPluginMetrics().incrementRewardsDelivered();
 
         if (plugin.getCSConfiguration().getBoolean("broadcast.enabled", "broadcast.activado", true)) {
-            plugin.broadcastMessage(plugin.getCSConfiguration().getString("broadcast.message", "broadcast.mensajeBroadcast", "").replace("{0}", player));
+            plugin.broadcastMessage(PlayerPlaceholders.applyPlayer(
+                    plugin.getCSConfiguration().getString("broadcast.message", "broadcast.mensajeBroadcast", ""),
+                    player));
         }
 
         debug("Premio entregado a " + player + ".");

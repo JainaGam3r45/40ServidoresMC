@@ -85,10 +85,7 @@ public class VoteStreakService {
     }
 
     private void dispatchMilestoneCommand(String command, String player, String uuid, int streak) {
-        String parsedCommand = command
-                .replace("%player%", player)
-                .replace("%uuid%", uuid == null ? "" : uuid)
-                .replace("%streak%", String.valueOf(streak));
+        String parsedCommand = PlayerPlaceholders.applyStreakCommand(command, player, uuid, streak);
         plugin.runSync(() -> plugin.dispatchCommand(parsedCommand));
     }
 

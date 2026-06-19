@@ -39,7 +39,7 @@ public class TestConfigMigrator {
                         "mensaje: '&dPremio propio'\n" +
                         "alreadyRewardedMessage: '&aYa reclamaste. Vuelve en %time%.'\n" +
                         "comandosCustom:\n" +
-                        "  - give {0} stone 1\n" +
+                        "  - give %player% stone 1\n" +
                         "readTimeOut: 7000\n" +
                         "connectTimeOut: 8000\n" +
                         "httpRetries: 4\n" +
@@ -71,7 +71,7 @@ public class TestConfigMigrator {
         assertTrue(migrated.contains("  enabled: false"));
         assertTrue(migrated.contains("  message: \"&bMensaje propio\""));
         assertTrue(migrated.contains("rewards:\n"));
-        assertTrue(migrated.contains("  commands:\n    - \"give {0} stone 1\""));
+        assertTrue(migrated.contains("  commands:\n    - \"give %player% stone 1\""));
         assertFalse(migrated.contains("customExtra:"));
         assertFalse(migrated.contains("clave:"));
         assertFalse(migrated.contains("configVer:"));
@@ -103,16 +103,16 @@ public class TestConfigMigrator {
         File config = writeConfig(
                 "rewards:\n" +
                         "  commands:\n" +
-                        "    - eco give {0} 100\n" +
-                        "    - lp user {0} parent add voter\n"
+                        "    - eco give %player% 100\n" +
+                        "    - lp user %player% parent add voter\n"
         );
 
         new ConfigMigrator(new TestPlugin(tempDir.toFile()), config).migrate();
 
         String migrated = normalize(read(config));
         assertTrue(migrated.contains("  commands:\n" +
-                "    - \"eco give {0} 100\"\n" +
-                "    - \"lp user {0} parent add voter\""));
+                "    - \"eco give %player% 100\"\n" +
+                "    - \"lp user %player% parent add voter\""));
     }
 
     @Test

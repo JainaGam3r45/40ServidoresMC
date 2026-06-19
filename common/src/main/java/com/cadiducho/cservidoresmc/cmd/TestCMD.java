@@ -1,5 +1,6 @@
 package com.cadiducho.cservidoresmc.cmd;
 
+import com.cadiducho.cservidoresmc.PlayerPlaceholders;
 import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.api.CSPlugin;
 
@@ -28,8 +29,7 @@ public class TestCMD extends CSCommand {
         sender.sendMessage("");
         sender.sendMessageWithTag(plugin.getCSConfiguration().getString("messages.voteClaim", "mensaje", ""));
         for (String cmds : plugin.getCSConfiguration().customCommandsList()) {
-            String comando = cmds.replace("{0}", sender.getName());
-            plugin.dispatchCommand(comando);
+            plugin.dispatchCommand(PlayerPlaceholders.applyPlayer(cmds, sender.getName()));
         }
 
         return CommandResult.SUCCESS;

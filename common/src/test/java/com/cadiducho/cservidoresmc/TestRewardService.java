@@ -290,7 +290,7 @@ public class TestRewardService {
         private TestConfiguration(CSPlugin plugin) {
             this.plugin = plugin;
             strings.put("mensaje", "&6Gracias por votarnos! Aqui tienes tu premio: ");
-            strings.put("broadcast.mensajeBroadcast", "&aGracias a {0} por votarnos!");
+            strings.put("broadcast.mensajeBroadcast", "&aGracias a %player% por votarnos!");
             booleans.put("broadcast.activado", true);
             booleans.put("autoReward.enabled", true);
             booleans.put("autoReward.debug", false);
@@ -319,7 +319,7 @@ public class TestRewardService {
         @Override
         public List<String> getStringList(String path, List<String> def) {
             if ("comandosCustom".equals(path)) {
-                return Collections.singletonList("money add {0} 10");
+                return Collections.singletonList("money add %player% 10");
             }
             if ("autoReward.recheckDelaysSeconds".equals(path)) {
                 return Arrays.asList("0", "0", "0");
