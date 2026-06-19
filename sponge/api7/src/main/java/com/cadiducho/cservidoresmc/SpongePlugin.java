@@ -177,15 +177,18 @@ public class SpongePlugin implements CSPlugin {
     private void printStartupInfo() {
         Sponge.getServer().getConsole().sendMessage(Text.EMPTY);
         Sponge.getServer().getConsole().sendMessage(Text.of(
-                TextColors.AQUA, "  40  ",
-                TextColors.WHITE, "40ServidoresMC ",
-                TextColors.GRAY, "v" + getPluginVersion()));
+                TextColors.AQUA, "  _  _    ___   ",
+                TextColors.GREEN, "40ServidoresMC ",
+                TextColors.AQUA, "v" + getPluginVersion()));
         Sponge.getServer().getConsole().sendMessage(Text.of(
-                TextColors.AQUA, "      ",
+                TextColors.AQUA, " | || |  / _ \\  ",
                 TextColors.DARK_GRAY, "Running on Sponge - " + game.getPlatform().getMinecraftVersion().getName()));
         Sponge.getServer().getConsole().sendMessage(Text.of(
-                TextColors.AQUA, "      ",
-                TextColors.DARK_GRAY, "Reescrito por JainaGam3r45"));
+                TextColors.AQUA, " |__  _|| | | | ",
+                TextColors.DARK_GRAY, "Reescrito por ",
+                TextColors.LIGHT_PURPLE, Text.builder("github.com/jainagam3r45").style(org.spongepowered.api.text.format.TextStyles.UNDERLINE).build()));
+        Sponge.getServer().getConsole().sendMessage(Text.of(
+                TextColors.AQUA, "    |_|  \\___/  "));
         Sponge.getServer().getConsole().sendMessage(Text.EMPTY);
     }
 

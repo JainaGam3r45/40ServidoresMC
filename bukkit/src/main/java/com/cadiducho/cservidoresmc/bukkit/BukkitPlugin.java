@@ -156,9 +156,10 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
     private void printStartupInfo() {
         ConsoleCommandSender console = getServer().getConsoleSender();
         console.sendMessage("");
-        console.sendMessage(ChatColor.AQUA + "  40  " + ChatColor.WHITE + "40ServidoresMC " + ChatColor.GRAY + "v" + getPluginVersion());
-        console.sendMessage(ChatColor.AQUA + "      " + ChatColor.DARK_GRAY + "Running on Bukkit - " + getServer().getName() + " " + getServer().getBukkitVersion().split("-")[0]);
-        console.sendMessage(ChatColor.AQUA + "      " + ChatColor.DARK_GRAY + "Reescrito por JainaGam3r45");
+        console.sendMessage(ChatColor.AQUA + "  _  _    ___   " + ChatColor.GREEN + "40ServidoresMC " + ChatColor.AQUA + "v" + getPluginVersion());
+        console.sendMessage(ChatColor.AQUA + " | || |  / _ \\  " + ChatColor.DARK_GRAY + "Running on Bukkit - " + getServer().getName() + " " + getServer().getBukkitVersion().split("-")[0]);
+        console.sendMessage(ChatColor.AQUA + " |__  _|| | | | " + ChatColor.DARK_GRAY + "Reescrito por " + ChatColor.LIGHT_PURPLE + ChatColor.UNDERLINE + "github.com/jainagam3r45" + ChatColor.RESET);
+        console.sendMessage(ChatColor.AQUA + "    |_|  \\___/  ");
         console.sendMessage("");
     }
 
