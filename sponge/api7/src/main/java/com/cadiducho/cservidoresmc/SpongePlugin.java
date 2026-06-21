@@ -9,6 +9,9 @@ import com.cadiducho.cservidoresmc.BoundedTaskExecutor;
 import com.cadiducho.cservidoresmc.PlayerVoteStore;
 import com.cadiducho.cservidoresmc.UpdateNotificationSession;
 import com.cadiducho.cservidoresmc.model.updater.UpdateCheckResult;
+import com.cadiducho.cservidoresmc.scheduler.CSScheduler;
+import com.cadiducho.cservidoresmc.scheduler.PlayerReference;
+import com.cadiducho.cservidoresmc.scheduler.PlayerTask;
 import com.google.gson.Gson;
 import com.google.inject.Inject;
 import org.bstats.sponge.Metrics;
@@ -35,10 +38,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.concurrent.TimeUnit;
 
 @Plugin(id = "cservidoresmc", name = "40ServidoresMC", version = SpongePlugin.PLUGIN_VERSION)
 public class SpongePlugin implements CSPlugin {
@@ -58,6 +59,7 @@ public class SpongePlugin implements CSPlugin {
     private PlayerVoteStore playerVoteStore;
     private CSConfiguration csConfiguration;
     private BoundedTaskExecutor asyncExecutor;
+    private SpongeSchedulerAdapter scheduler;
     private volatile boolean active;
     private final UpdateNotificationSession updateNotificationSession = new UpdateNotificationSession();
 
@@ -84,6 +86,7 @@ public class SpongePlugin implements CSPlugin {
     public void onServerStart(GameStartedServerEvent event) {
         active = true;
         asyncExecutor = new BoundedTaskExecutor("40servidoresmc-http", pluginMetrics, this::logError);
+        scheduler = new SpongeSchedulerAdapter(this, asyncExecutor);
         apiClient = new ApiClient(this, new Gson(), asyncExecutor);
         playerVoteStore = new PlayerVoteStore(getPluginDataFolder(), this);
         new LegacyPlayerDataMigrator(this, getPluginDataFolder(), playerVoteStore).migrate();
@@ -104,6 +107,9 @@ public class SpongePlugin implements CSPlugin {
         active = false;
         shutdownVoteReminderService();
         shutdownRewardService();
+        if (scheduler != null) {
+            scheduler.shutdown();
+        }
         if (asyncExecutor != null) {
             asyncExecutor.shutdownNow();
         }
@@ -121,10 +127,18 @@ public class SpongePlugin implements CSPlugin {
             return;
         }
 
-        Sponge.getScheduler().createTaskBuilder()
-                .delay(updater.joinNotificationDelaySeconds(), TimeUnit.SECONDS)
-                .execute(() -> notifyJoinedAdmin(player.getUniqueId()))
-                .submit(this);
+        PlayerReference reference = PlayerReference.of(player.getName(), uniqueId);
+        getScheduler().runPlayerLater(reference, new PlayerTask() {
+            @Override
+            public void run(CSCommandSender sender) {
+                notifyJoinedAdmin(reference, sender);
+            }
+
+            @Override
+            public void unavailable(PlayerReference player) {
+                updateNotificationSession.clearPending(player.getUniqueId());
+            }
+        }, updater.joinNotificationDelaySeconds(), java.util.concurrent.TimeUnit.SECONDS);
     }
 
     private Path resolveConfig() {
@@ -238,13 +252,18 @@ public class SpongePlugin implements CSPlugin {
     }
 
     @Override
+    public CSScheduler getScheduler() {
+        return scheduler == null ? CSPlugin.super.getScheduler() : scheduler;
+    }
+
+    @Override
     public String getPluginVersion() {
         return PLUGIN_VERSION;
     }
 
     @Override
     public void dispatchCommand(String command) {
-        Sponge.getCommandManager().process(Sponge.getServer().getConsole(), command);
+        getScheduler().runGlobal(() -> Sponge.getCommandManager().process(Sponge.getServer().getConsole(), command));
     }
 
     @Override
@@ -268,7 +287,7 @@ public class SpongePlugin implements CSPlugin {
 
     @Override
     public void runSync(Runnable task) {
-        Sponge.getScheduler().createTaskBuilder().execute(task).submit(this);
+        getScheduler().runGlobal(task);
     }
 
     @Override
@@ -282,43 +301,36 @@ public class SpongePlugin implements CSPlugin {
 
     @Override
     public void broadcastMessage(String message) {
-        runSync(() -> Sponge.getServer().getBroadcastChannel().send(TextSerializers.FORMATTING_CODE.deserialize(message)));
+        getScheduler().runGlobal(() -> Sponge.getServer().getBroadcastChannel().send(TextSerializers.FORMATTING_CODE.deserialize(message)));
     }
 
-    private void notifyJoinedAdmin(UUID playerId) {
+    private void notifyJoinedAdmin(PlayerReference reference, CSCommandSender sender) {
         if (!isActive()) {
-            updateNotificationSession.clearPending(playerId.toString());
-            return;
-        }
-
-        Player player = Sponge.getServer().getPlayer(playerId).orElse(null);
-        if (player == null) {
-            updateNotificationSession.clearPending(playerId.toString());
+            updateNotificationSession.clearPending(reference.getUniqueId());
             return;
         }
 
         UpdateCheckResult result = updater.getCachedResult();
-        if (sendUpdateNotice(player, result)) {
+        if (sendUpdateNotice(sender, result)) {
             return;
         }
 
         CompletableFuture<UpdateCheckResult> currentCheck = updater.getCurrentCheck();
         if (currentCheck == null) {
-            updateNotificationSession.clearPending(playerId.toString());
+            updateNotificationSession.clearPending(reference.getUniqueId());
             return;
         }
 
-        currentCheck.whenComplete((checkedResult, error) -> runSyncIfActive(() -> {
-            Player online = Sponge.getServer().getPlayer(playerId).orElse(null);
-            if (online == null || error != null || !sendUpdateNotice(online, checkedResult)) {
-                updateNotificationSession.clearPending(playerId.toString());
+        currentCheck.whenComplete((checkedResult, error) -> runPlayerIfActive(reference, online -> {
+            if (error != null || !sendUpdateNotice(online, checkedResult)) {
+                updateNotificationSession.clearPending(reference.getUniqueId());
             }
         }));
     }
 
-    private boolean sendUpdateNotice(Player player, UpdateCheckResult result) {
-        if (updater.sendUpdateNoticeIfAvailable(new SpongeCommandSender(player, this), result)) {
-            updateNotificationSession.markNotified(player.getUniqueId().toString());
+    private boolean sendUpdateNotice(CSCommandSender sender, UpdateCheckResult result) {
+        if (updater.sendUpdateNoticeIfAvailable(sender, result)) {
+            updateNotificationSession.markNotified(sender.getUniqueId());
             return true;
         }
         return false;

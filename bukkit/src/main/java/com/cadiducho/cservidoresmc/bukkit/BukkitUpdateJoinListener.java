@@ -2,14 +2,15 @@ package com.cadiducho.cservidoresmc.bukkit;
 
 import com.cadiducho.cservidoresmc.UpdateNotificationSession;
 import com.cadiducho.cservidoresmc.Updater;
+import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.model.updater.UpdateCheckResult;
-import org.bukkit.Bukkit;
+import com.cadiducho.cservidoresmc.scheduler.PlayerReference;
+import com.cadiducho.cservidoresmc.scheduler.PlayerTask;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 public class BukkitUpdateJoinListener implements Listener {
@@ -40,45 +41,48 @@ public class BukkitUpdateJoinListener implements Listener {
             return;
         }
 
-        long delayTicks = updater.joinNotificationDelaySeconds() * 20L;
-        Bukkit.getScheduler().runTaskLater(plugin, () -> notifyIfUpdateAvailable(player.getUniqueId()), delayTicks);
+        PlayerReference reference = PlayerReference.of(player.getName(), uniqueId);
+        plugin.getScheduler().runPlayerLater(reference, new PlayerTask() {
+            @Override
+            public void run(CSCommandSender sender) {
+                notifyIfUpdateAvailable(reference, sender);
+            }
+
+            @Override
+            public void unavailable(PlayerReference player) {
+                session.clearPending(player.getUniqueId());
+            }
+        }, updater.joinNotificationDelaySeconds(), java.util.concurrent.TimeUnit.SECONDS);
     }
 
-    private void notifyIfUpdateAvailable(UUID playerId) {
+    private void notifyIfUpdateAvailable(PlayerReference reference, CSCommandSender sender) {
         if (!plugin.isActive()) {
-            session.clearPending(playerId.toString());
-            return;
-        }
-
-        Player player = Bukkit.getPlayer(playerId);
-        if (player == null || !player.isOnline()) {
-            session.clearPending(playerId.toString());
+            session.clearPending(reference.getUniqueId());
             return;
         }
 
         Updater updater = plugin.getUpdater();
         UpdateCheckResult result = updater.getCachedResult();
-        if (send(player, result)) {
+        if (send(sender, result)) {
             return;
         }
 
         CompletableFuture<UpdateCheckResult> currentCheck = updater.getCurrentCheck();
         if (currentCheck == null) {
-            session.clearPending(playerId.toString());
+            session.clearPending(reference.getUniqueId());
             return;
         }
 
-        currentCheck.whenComplete((checkedResult, error) -> plugin.runSyncIfActive(() -> {
-            Player online = Bukkit.getPlayer(playerId);
-            if (online == null || !online.isOnline() || error != null || !send(online, checkedResult)) {
-                session.clearPending(playerId.toString());
+        currentCheck.whenComplete((checkedResult, error) -> plugin.runPlayerIfActive(reference, online -> {
+            if (error != null || !send(online, checkedResult)) {
+                session.clearPending(reference.getUniqueId());
             }
         }));
     }
 
-    private boolean send(Player player, UpdateCheckResult result) {
-        if (plugin.getUpdater().sendUpdateNoticeIfAvailable(new BukkitCommandSender(player, plugin), result)) {
-            session.markNotified(player.getUniqueId().toString());
+    private boolean send(CSCommandSender sender, UpdateCheckResult result) {
+        if (plugin.getUpdater().sendUpdateNoticeIfAvailable(sender, result)) {
+            session.markNotified(sender.getUniqueId());
             return true;
         }
         return false;

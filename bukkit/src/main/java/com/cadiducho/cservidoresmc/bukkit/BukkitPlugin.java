@@ -14,6 +14,7 @@ import com.cadiducho.cservidoresmc.api.CSConsoleSender;
 import com.cadiducho.cservidoresmc.api.CSPlugin;
 import com.cadiducho.cservidoresmc.cmd.CSCommandManager;
 import com.cadiducho.cservidoresmc.config.CSConfiguration;
+import com.cadiducho.cservidoresmc.scheduler.CSScheduler;
 import com.google.gson.Gson;
 import lombok.Getter;
 import org.bstats.bukkit.Metrics;
@@ -51,6 +52,7 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
     private CSConfiguration csConfiguration;
     private CSCommandManager commandManager;
     private BoundedTaskExecutor asyncExecutor;
+    private BukkitSchedulerAdapter scheduler;
     private volatile boolean active;
     
     @Override
@@ -68,6 +70,7 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
         new LegacyPlayerDataMigrator(instance, getDataFolder(), playerVoteStore).migrate();
 
         asyncExecutor = new BoundedTaskExecutor("40servidoresmc-http", pluginMetrics, this::logError);
+        scheduler = new BukkitSchedulerAdapter(this, asyncExecutor);
         apiClient = new ApiClient(instance, new Gson(), asyncExecutor);
         voteReminderService = new VoteReminderService(instance);
         voteStreakService = new VoteStreakService(instance);
@@ -102,6 +105,9 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
         active = false;
         shutdownVoteReminderService();
         shutdownRewardService();
+        if (scheduler != null) {
+            scheduler.shutdown();
+        }
         if (asyncExecutor != null) {
             asyncExecutor.shutdownNow();
         }
@@ -184,6 +190,11 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
     }
 
     @Override
+    public CSScheduler getScheduler() {
+        return scheduler == null ? CSPlugin.super.getScheduler() : scheduler;
+    }
+
+    @Override
     public void log(String s) {
         getLogger().log(Level.INFO, s);
     }
@@ -200,7 +211,7 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
 
     @Override
     public void dispatchCommand(String command) {
-        getServer().getScheduler().callSyncMethod(instance, () -> getServer().dispatchCommand(getServer().getConsoleSender(), command));
+        getScheduler().runGlobal(() -> getServer().dispatchCommand(getServer().getConsoleSender(), command));
     }
 
     @Override
@@ -227,7 +238,7 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
 
     @Override
     public void runSync(Runnable task) {
-        getServer().getScheduler().runTask(instance, task);
+        getScheduler().runGlobal(task);
     }
 
     @Override
@@ -241,7 +252,7 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
 
     @Override
     public void broadcastMessage(String message) {
-        getServer().getScheduler().runTask(instance, () -> {
+        getScheduler().runGlobal(() -> {
             getServer().getOnlinePlayers().forEach(p -> p.sendMessage(ChatColor.translateAlternateColorCodes('&', message)));
         });
     }
