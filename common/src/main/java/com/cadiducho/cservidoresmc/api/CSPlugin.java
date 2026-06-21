@@ -8,12 +8,15 @@ import com.cadiducho.cservidoresmc.Updater;
 import com.cadiducho.cservidoresmc.VoteReminderService;
 import com.cadiducho.cservidoresmc.VoteStreakService;
 import com.cadiducho.cservidoresmc.config.CSConfiguration;
+import com.cadiducho.cservidoresmc.scheduler.CSScheduler;
+import com.cadiducho.cservidoresmc.scheduler.CommonSchedulers;
+import com.cadiducho.cservidoresmc.scheduler.PlayerReference;
+import com.cadiducho.cservidoresmc.scheduler.PlayerTask;
 
 import java.io.File;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ForkJoinPool;
 
 public interface CSPlugin {
 
@@ -34,8 +37,12 @@ public interface CSPlugin {
         return true;
     }
 
+    default CSScheduler getScheduler() {
+        return CommonSchedulers.direct();
+    }
+
     default Executor getAsyncExecutor() {
-        return ForkJoinPool.commonPool();
+        return getScheduler().asyncExecutor();
     }
 
     /**
@@ -170,8 +177,9 @@ public interface CSPlugin {
      * Ejecutar una tarea en el hilo principal de la plataforma
      * @param task tarea
      */
+    @Deprecated
     default void runSync(Runnable task) {
-        task.run();
+        getScheduler().runGlobal(task);
     }
 
     default void runSyncIfActive(Runnable task) {
@@ -183,6 +191,33 @@ public interface CSPlugin {
                 task.run();
             }
         });
+    }
+
+    default void runPlayerIfActive(PlayerReference player, PlayerTask task) {
+        if (!isActive()) {
+            return;
+        }
+        getScheduler().runPlayer(player, sender -> {
+            if (isActive()) {
+                task.run(sender);
+            }
+        });
+    }
+
+    default void runSenderIfActive(CSCommandSender sender, PlayerTask task) {
+        if (sender == null || !isActive()) {
+            return;
+        }
+        if (sender.isConsole()) {
+            runSyncIfActive(() -> task.run(sender));
+            return;
+        }
+        PlayerReference reference = PlayerReference.from(sender);
+        if (!reference.hasUniqueId()) {
+            runSyncIfActive(() -> task.run(sender));
+            return;
+        }
+        runPlayerIfActive(reference, task);
     }
 
     default void sendFormattedMessage(CSCommandSender sender, String message) {
