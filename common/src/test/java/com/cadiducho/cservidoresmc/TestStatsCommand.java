@@ -49,6 +49,37 @@ public class TestStatsCommand {
         assertEquals(0, sender.messages.size());
     }
 
+    @Test
+    void completedStatsFromCacheUsePlayerScheduler() {
+        TestPlugin plugin = new TestPlugin();
+        TestSender sender = new TestSender("0f50d3c1-2d53-47d8-9f5a-10153b5f9770");
+        plugin.scheduler.connect(sender);
+        ServerStats stats = new ServerStats();
+        stats.setServerName("Servidor");
+        stats.setLastVotes(Collections.emptyList());
+        plugin.apiClient = new TestApiClient(plugin, stats);
+
+        new StatsCMD().execute(plugin, sender, "stats40", Collections.emptyList());
+
+        assertEquals(5, sender.messages.size());
+    }
+
+    @Test
+    void completedStatsDoNotRunPlayerTaskAfterShutdown() {
+        TestPlugin plugin = new TestPlugin();
+        TestSender sender = new TestSender("0f50d3c1-2d53-47d8-9f5a-10153b5f9770");
+        plugin.scheduler.connect(sender);
+        plugin.active = false;
+        ServerStats stats = new ServerStats();
+        stats.setServerName("Servidor");
+        stats.setLastVotes(Collections.emptyList());
+        plugin.apiClient = new TestApiClient(plugin, stats);
+
+        new StatsCMD().execute(plugin, sender, "stats40", Collections.emptyList());
+
+        assertEquals(0, sender.messages.size());
+    }
+
     private static class TestApiClient extends ApiClient {
 
         private final ServerStats stats;
@@ -67,6 +98,15 @@ public class TestStatsCommand {
     private static class TestSender implements CSCommandSender {
 
         private final List<String> messages = new ArrayList<>();
+        private final String uuid;
+
+        private TestSender() {
+            this("");
+        }
+
+        private TestSender(String uuid) {
+            this.uuid = uuid;
+        }
 
         @Override
         public String TAG() {
@@ -84,6 +124,11 @@ public class TestStatsCommand {
         }
 
         @Override
+        public String getUniqueId() {
+            return uuid;
+        }
+
+        @Override
         public boolean hasPermission(String permission) {
             return true;
         }
@@ -94,6 +139,12 @@ public class TestStatsCommand {
         private ApiClient apiClient;
         private boolean active = true;
         private final PluginMetrics metrics = new PluginMetrics();
+        private final TestScheduler scheduler = new TestScheduler();
+
+        @Override
+        public com.cadiducho.cservidoresmc.scheduler.CSScheduler getScheduler() {
+            return scheduler;
+        }
 
         @Override
         public void log(String text) {

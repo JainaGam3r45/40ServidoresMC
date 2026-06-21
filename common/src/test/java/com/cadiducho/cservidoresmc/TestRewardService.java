@@ -31,16 +31,17 @@ public class TestRewardService {
     @Test
     void voteDetectedAfterSeveralAttempts() {
         TestPlugin plugin = new TestPlugin(tempDir);
-        ManualScheduler scheduler = new ManualScheduler();
+        TestScheduler scheduler = plugin.scheduler;
         RewardService rewardService = rewardService(plugin, scheduler);
         plugin.setRewardService(rewardService);
         plugin.setApiClient(new FakeApiClient(plugin, vote("0"), vote("0"), vote("1")));
         TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
 
         rewardService.handleVoteResponse(sender.getName(), sender, vote("0"));
-        scheduler.runNext();
-        scheduler.runNext();
-        scheduler.runNext();
+        scheduler.runNextDelayed();
+        scheduler.runNextDelayed();
+        scheduler.runNextDelayed();
 
         assertEquals(Collections.singletonList("money add Cadiducho 10"), plugin.commands);
         assertEquals(1, plugin.getPluginMetrics().getRewardsDelivered());
@@ -49,10 +50,11 @@ public class TestRewardService {
     @Test
     void rewardIsDeliveredOnce() {
         TestPlugin plugin = new TestPlugin(tempDir);
-        RewardService rewardService = rewardService(plugin, new ManualScheduler());
+        RewardService rewardService = rewardService(plugin, plugin.scheduler);
         plugin.setRewardService(rewardService);
         plugin.setApiClient(new FakeApiClient(plugin));
         TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
 
         rewardService.deliverReward(sender.getName(), sender, true);
         rewardService.deliverReward(sender.getName(), sender, true);
@@ -65,11 +67,12 @@ public class TestRewardService {
     void duplicateRewardDoesNotDuplicateStreakMilestone() {
         TestPlugin plugin = new TestPlugin(tempDir);
         plugin.configuration.streakRewards.put("1", Collections.singletonList("give %player% diamond %streak%"));
-        RewardService rewardService = rewardService(plugin, new ManualScheduler());
+        RewardService rewardService = rewardService(plugin, plugin.scheduler);
         plugin.setRewardService(rewardService);
         plugin.setVoteStreakService(new VoteStreakService(plugin, new File(tempDir, "vote-streaks.properties"), () -> java.time.LocalDate.parse("2026-06-18")));
         plugin.setApiClient(new FakeApiClient(plugin));
         TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
 
         rewardService.deliverReward(sender.getName(), sender, true);
         rewardService.deliverReward(sender.getName(), sender, true);
@@ -80,15 +83,16 @@ public class TestRewardService {
     @Test
     void apiErrorDoesNotDuplicateReward() {
         TestPlugin plugin = new TestPlugin(tempDir);
-        ManualScheduler scheduler = new ManualScheduler();
+        TestScheduler scheduler = plugin.scheduler;
         RewardService rewardService = rewardService(plugin, scheduler);
         plugin.setRewardService(rewardService);
         plugin.setApiClient(new FakeApiClient(plugin, new IOException("API down"), vote("1"), vote("1")));
         TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
 
         rewardService.handleVoteResponse(sender.getName(), sender, vote("0"));
-        scheduler.runNext();
-        scheduler.runNext();
+        scheduler.runNextDelayed();
+        scheduler.runNextDelayed();
         rewardService.handleVoteResponse(sender.getName(), sender, vote("1"));
 
         assertEquals(Collections.singletonList("money add Cadiducho 10"), plugin.commands);
@@ -98,26 +102,28 @@ public class TestRewardService {
     @Test
     void exposesPendingAutoRewardState() {
         TestPlugin plugin = new TestPlugin(tempDir);
-        ManualScheduler scheduler = new ManualScheduler();
+        TestScheduler scheduler = plugin.scheduler;
         RewardService rewardService = rewardService(plugin, scheduler);
         plugin.setRewardService(rewardService);
         plugin.setApiClient(new FakeApiClient(plugin, vote("1")));
         TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
 
         rewardService.handleVoteResponse(sender.getName(), sender, vote("0"));
 
         assertEquals(true, rewardService.hasPendingReward("cadiducho"));
-        scheduler.runNext();
+        scheduler.runNextDelayed();
         assertEquals(false, rewardService.hasPendingReward("Cadiducho"));
     }
 
     @Test
     void manualSuccessUsesRewardService() {
         TestPlugin plugin = new TestPlugin(tempDir);
-        RewardService rewardService = rewardService(plugin, new ManualScheduler());
+        RewardService rewardService = rewardService(plugin, plugin.scheduler);
         plugin.setRewardService(rewardService);
         plugin.setApiClient(new FakeApiClient(plugin));
         TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
 
         rewardService.handleVoteResponse(sender.getName(), sender, vote("1"));
 
@@ -129,10 +135,11 @@ public class TestRewardService {
     @Test
     void localRewardedStateOverridesNotVotedMessage() {
         TestPlugin plugin = new TestPlugin(tempDir);
-        RewardService rewardService = new RewardService(plugin, tempDir, new ManualScheduler(), () -> "2026-06-18", () -> 1_000L);
+        RewardService rewardService = new RewardService(plugin, tempDir, plugin.scheduler, () -> "2026-06-18", () -> 1_000L);
         plugin.setRewardService(rewardService);
         plugin.setApiClient(new FakeApiClient(plugin));
         TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
 
         rewardService.deliverReward(sender, true);
         rewardService.handleVoteResponse(sender.getName(), sender, vote("0"));
@@ -141,31 +148,12 @@ public class TestRewardService {
         assertEquals(true, sender.messages.get(sender.messages.size() - 1).contains("Ya has votado y recibido tu recompensa"));
     }
 
-    private RewardService rewardService(TestPlugin plugin, ManualScheduler scheduler) {
+    private RewardService rewardService(TestPlugin plugin, TestScheduler scheduler) {
         return new RewardService(plugin, new File(tempDir, "rewarded-votes.properties"), scheduler, () -> "2026-06-18");
     }
 
     private VoteResponse vote(String status) {
         return new Gson().fromJson("{\"web\":\"https://40servidoresmc.es\",\"status\":\"" + status + "\"}", VoteResponse.class);
-    }
-
-    private static class ManualScheduler implements RewardService.RewardScheduler {
-
-        private final Queue<Runnable> tasks = new ArrayDeque<>();
-
-        @Override
-        public void schedule(Runnable task, long delaySeconds) {
-            tasks.add(task);
-        }
-
-        @Override
-        public void shutdown() {
-            tasks.clear();
-        }
-
-        private void runNext() {
-            tasks.remove().run();
-        }
     }
 
     private static class FakeApiClient extends ApiClient {
@@ -194,6 +182,7 @@ public class TestRewardService {
         private final File dataFolder;
         private final PluginMetrics pluginMetrics = new PluginMetrics();
         private final TestConfiguration configuration = new TestConfiguration(this);
+        private final TestScheduler scheduler = new TestScheduler();
         private final List<String> commands = new ArrayList<>();
         private final List<String> broadcasts = new ArrayList<>();
         private ApiClient apiClient;
@@ -231,6 +220,11 @@ public class TestRewardService {
         @Override
         public CSConfiguration getCSConfiguration() {
             return configuration;
+        }
+
+        @Override
+        public com.cadiducho.cservidoresmc.scheduler.CSScheduler getScheduler() {
+            return scheduler;
         }
 
         @Override

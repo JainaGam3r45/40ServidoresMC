@@ -26,9 +26,10 @@ public class TestVoteReminderService {
     void remindsAfterTwentyFourHours() {
         AtomicLong clock = new AtomicLong(1_000L);
         TestPlugin plugin = new TestPlugin(tempDir);
-        ManualScheduler scheduler = new ManualScheduler();
+        TestScheduler scheduler = plugin.scheduler;
         VoteReminderService service = reminderService(plugin, scheduler, clock);
         TestSender sender = new TestSender("Cadiducho");
+        scheduler.connect(sender);
         plugin.onlinePlayers.add(sender);
 
         service.recordVote(sender.getName(), clock.get());
@@ -42,8 +43,9 @@ public class TestVoteReminderService {
     void doesNotRemindBeforeTwentyFourHours() {
         AtomicLong clock = new AtomicLong(1_000L);
         TestPlugin plugin = new TestPlugin(tempDir);
-        VoteReminderService service = reminderService(plugin, new ManualScheduler(), clock);
+        VoteReminderService service = reminderService(plugin, plugin.scheduler, clock);
         TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
         plugin.onlinePlayers.add(sender);
 
         service.recordVote(sender.getName(), clock.get());
@@ -59,7 +61,7 @@ public class TestVoteReminderService {
     void exposesLocalVoteStatus() {
         AtomicLong clock = new AtomicLong(1_000L);
         TestPlugin plugin = new TestPlugin(tempDir);
-        VoteReminderService service = reminderService(plugin, new ManualScheduler(), clock);
+        VoteReminderService service = reminderService(plugin, plugin.scheduler, clock);
 
         service.recordVote("Cadiducho", clock.get());
         clock.addAndGet(VoteReminderService.VOTE_COOLDOWN_MILLIS);
@@ -74,8 +76,9 @@ public class TestVoteReminderService {
     void doesNotRepeatReminderForSameVoteCycle() {
         AtomicLong clock = new AtomicLong(1_000L);
         TestPlugin plugin = new TestPlugin(tempDir);
-        VoteReminderService service = reminderService(plugin, new ManualScheduler(), clock);
+        VoteReminderService service = reminderService(plugin, plugin.scheduler, clock);
         TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
         plugin.onlinePlayers.add(sender);
 
         service.recordVote(sender.getName(), clock.get());
@@ -90,8 +93,9 @@ public class TestVoteReminderService {
     void remindsAgainAfterNewVote() {
         AtomicLong clock = new AtomicLong(1_000L);
         TestPlugin plugin = new TestPlugin(tempDir);
-        VoteReminderService service = reminderService(plugin, new ManualScheduler(), clock);
+        VoteReminderService service = reminderService(plugin, plugin.scheduler, clock);
         TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
         plugin.onlinePlayers.add(sender);
 
         service.recordVote(sender.getName(), clock.get());
@@ -110,9 +114,10 @@ public class TestVoteReminderService {
         AtomicLong clock = new AtomicLong(1_000L);
         TestPlugin plugin = new TestPlugin(tempDir);
         plugin.configuration.booleans.put("voteReminder.enabled", false);
-        ManualScheduler scheduler = new ManualScheduler();
+        TestScheduler scheduler = plugin.scheduler;
         VoteReminderService service = reminderService(plugin, scheduler, clock);
         TestSender sender = new TestSender("Cadiducho");
+        scheduler.connect(sender);
         plugin.onlinePlayers.add(sender);
 
         service.start();
@@ -120,7 +125,7 @@ public class TestVoteReminderService {
         clock.addAndGet(VoteReminderService.VOTE_COOLDOWN_MILLIS);
         service.checkReminders();
 
-        assertFalse(scheduler.started);
+        assertFalse(scheduler.hasDelayedTasks());
         assertEquals(Collections.emptyList(), sender.messages);
     }
 
@@ -129,40 +134,42 @@ public class TestVoteReminderService {
         AtomicLong clock = new AtomicLong(1_000L);
         TestPlugin plugin = new TestPlugin(tempDir);
         plugin.configuration.ints.put("voteReminder.checkIntervalSeconds", 1);
-        ManualScheduler scheduler = new ManualScheduler();
+        TestScheduler scheduler = plugin.scheduler;
         VoteReminderService service = reminderService(plugin, scheduler, clock);
 
         service.start();
 
-        assertEquals(60L, scheduler.intervalSeconds);
+        assertEquals(60L, scheduler.lastRepeatingPeriod());
     }
 
-    private VoteReminderService reminderService(TestPlugin plugin, ManualScheduler scheduler, AtomicLong clock) {
+    @Test
+    void reminderFlowUsesKnownUuidWithoutResolvingByName() {
+        AtomicLong clock = new AtomicLong(1_000L);
+        TestPlugin plugin = new TestPlugin(tempDir);
+        VoteReminderService service = reminderService(plugin, plugin.scheduler, clock);
+        TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
+        plugin.onlinePlayers.add(sender);
+
+        service.recordVote(sender.getName(), sender.getUniqueId(), clock.get());
+        clock.addAndGet(VoteReminderService.VOTE_COOLDOWN_MILLIS);
+        service.checkReminders();
+
+        assertEquals(0, plugin.resolveCalls);
+        assertEquals(Collections.singletonList("&8[&b40ServidoresMC&8] &aYa puedes volver a votar."), sender.messages);
+    }
+
+    private VoteReminderService reminderService(TestPlugin plugin, TestScheduler scheduler, AtomicLong clock) {
         return new VoteReminderService(plugin, new File(tempDir, "vote-reminders.properties"), scheduler, clock::get);
-    }
-
-    private static class ManualScheduler implements VoteReminderService.ReminderScheduler {
-
-        private boolean started;
-        private long intervalSeconds;
-
-        @Override
-        public void scheduleAtFixedRate(Runnable task, long intervalSeconds) {
-            started = true;
-            this.intervalSeconds = intervalSeconds;
-        }
-
-        @Override
-        public void shutdown() {
-            started = false;
-        }
     }
 
     private static class TestPlugin implements CSPlugin {
 
         private final File dataFolder;
         private final TestConfiguration configuration = new TestConfiguration(this);
+        private final TestScheduler scheduler = new TestScheduler();
         private final List<CSCommandSender> onlinePlayers = new ArrayList<>();
+        private int resolveCalls;
 
         private TestPlugin(File dataFolder) {
             this.dataFolder = dataFolder;
@@ -183,6 +190,11 @@ public class TestVoteReminderService {
         @Override
         public CSConfiguration getCSConfiguration() {
             return configuration;
+        }
+
+        @Override
+        public com.cadiducho.cservidoresmc.scheduler.CSScheduler getScheduler() {
+            return scheduler;
         }
 
         @Override
@@ -226,6 +238,7 @@ public class TestVoteReminderService {
 
         @Override
         public String resolvePlayerUniqueId(String player) {
+            resolveCalls++;
             return "cadiducho".equalsIgnoreCase(player) ? "0f50d3c1-2d53-47d8-9f5a-10153b5f9770" : "";
         }
 
