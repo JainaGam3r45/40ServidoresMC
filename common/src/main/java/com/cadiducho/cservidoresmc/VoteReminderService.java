@@ -2,15 +2,16 @@ package com.cadiducho.cservidoresmc;
 
 import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.api.CSPlugin;
+import com.cadiducho.cservidoresmc.scheduler.CSScheduler;
+import com.cadiducho.cservidoresmc.scheduler.CancellableTask;
+import com.cadiducho.cservidoresmc.scheduler.PlayerReference;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
@@ -23,21 +24,22 @@ public class VoteReminderService {
 
     private final CSPlugin plugin;
     private final PlayerVoteStore store;
-    private final ReminderScheduler scheduler;
+    private final CSScheduler scheduler;
     private final Supplier<Long> clock;
+    private CancellableTask reminderTask;
 
     public VoteReminderService(CSPlugin plugin) {
         this(plugin,
                 playerVoteStore(plugin),
-                new ScheduledReminderScheduler(),
+                plugin.getScheduler(),
                 System::currentTimeMillis);
     }
 
-    VoteReminderService(CSPlugin plugin, File dataPath, ReminderScheduler scheduler, Supplier<Long> clock) {
+    VoteReminderService(CSPlugin plugin, File dataPath, CSScheduler scheduler, Supplier<Long> clock) {
         this(plugin, new PlayerVoteStore(dataFolder(dataPath), plugin), scheduler, clock);
     }
 
-    VoteReminderService(CSPlugin plugin, PlayerVoteStore store, ReminderScheduler scheduler, Supplier<Long> clock) {
+    VoteReminderService(CSPlugin plugin, PlayerVoteStore store, CSScheduler scheduler, Supplier<Long> clock) {
         this.plugin = plugin;
         this.store = store;
         this.scheduler = scheduler;
@@ -50,11 +52,16 @@ public class VoteReminderService {
             return;
         }
 
-        scheduler.scheduleAtFixedRate(this::checkReminders, checkIntervalSeconds());
+        long interval = checkIntervalSeconds();
+        reminderTask = scheduler.runAsyncRepeating(this::checkReminders, interval, interval, TimeUnit.SECONDS);
     }
 
     public void recordVote(String player) {
         recordVote(player, clock.get());
+    }
+
+    public void recordVote(String player, String uuid) {
+        recordVote(player, uuid, clock.get());
     }
 
     public void recordVote(CSCommandSender sender) {
@@ -107,6 +114,12 @@ public class VoteReminderService {
         }
     }
 
+    void recordVote(String player, String uuid, long votedAt) {
+        if (!store.recordVote(player, uuid, votedAt)) {
+            debug("No se pudo guardar el último voto de " + player + ".");
+        }
+    }
+
     void recordVote(CSCommandSender sender, long votedAt) {
         if (!store.recordVote(sender, votedAt)) {
             debug("No se pudo guardar el último voto de " + sender.getName() + ".");
@@ -118,18 +131,25 @@ public class VoteReminderService {
             return;
         }
 
-        for (CSCommandSender sender : onlinePlayersByName().values()) {
-            remindIfReady(sender);
-        }
+        scheduler.runGlobal(() -> checkReminders(snapshotOnlinePlayers()));
     }
 
     public void shutdown() {
-        scheduler.shutdown();
+        if (reminderTask != null) {
+            reminderTask.cancel();
+        }
     }
 
-    private void remindIfReady(CSCommandSender sender) {
-        String player = sender.getName();
-        long lastVoteAt = store.lastVoteAt(player);
+    private void checkReminders(List<PlayerReference> players) {
+        scheduler.runAsync(() -> {
+            for (PlayerReference player : players) {
+                remindIfReady(player);
+            }
+        });
+    }
+
+    private void remindIfReady(PlayerReference player) {
+        long lastVoteAt = store.lastVoteAt(player.getName(), player.getUniqueId());
         if (lastVoteAt <= 0L) {
             return;
         }
@@ -139,25 +159,29 @@ public class VoteReminderService {
             return;
         }
 
-        if (store.wasRemindedFor(player, lastVoteAt)) {
+        if (store.wasRemindedFor(player.getName(), player.getUniqueId(), lastVoteAt)) {
             return;
         }
 
-        if (!store.markReminded(player, lastVoteAt)) {
-            debug("No se pudo marcar el recordatorio de " + player + ".");
+        if (!store.markReminded(player.getName(), player.getUniqueId(), lastVoteAt)) {
+            debug("No se pudo marcar el recordatorio de " + player.getName() + ".");
             return;
         }
 
-        plugin.runSync(() -> sender.sendMessageWithTag(message()));
+        String reminderMessage = message();
+        plugin.runPlayerIfActive(player, sender -> sender.sendMessageWithTag(reminderMessage));
     }
 
-    private Map<String, CSCommandSender> onlinePlayersByName() {
-        Map<String, CSCommandSender> players = new HashMap<>();
+    private List<PlayerReference> snapshotOnlinePlayers() {
+        Map<String, PlayerReference> players = new HashMap<>();
         List<CSCommandSender> onlinePlayers = plugin.getOnlinePlayers();
         for (CSCommandSender player : onlinePlayers) {
-            players.put(normalizePlayer(player.getName()), player);
+            PlayerReference reference = PlayerReference.from(player);
+            if (reference.hasUniqueId()) {
+                players.put(normalizePlayer(reference.getName()), reference);
+            }
         }
-        return players;
+        return new ArrayList<>(players.values());
     }
 
     private boolean enabled() {
@@ -192,31 +216,4 @@ public class VoteReminderService {
         }
     }
 
-    interface ReminderScheduler {
-        void scheduleAtFixedRate(Runnable task, long intervalSeconds);
-
-        void shutdown();
-    }
-
-    private static class ScheduledReminderScheduler implements ReminderScheduler {
-
-        private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
-            @Override
-            public Thread newThread(Runnable runnable) {
-                Thread thread = new Thread(runnable, "40servidoresmc-vote-reminder");
-                thread.setDaemon(true);
-                return thread;
-            }
-        });
-
-        @Override
-        public void scheduleAtFixedRate(Runnable task, long intervalSeconds) {
-            executor.scheduleAtFixedRate(task, intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
-        }
-
-        @Override
-        public void shutdown() {
-            executor.shutdownNow();
-        }
-    }
 }

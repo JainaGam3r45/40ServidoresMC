@@ -42,9 +42,9 @@ public class VoteCMD extends CSCommand {
             if (!plugin.isActive()) {
                 return;
             }
-            plugin.getRewardService().handleVoteResponse(sender.getName(), sender, voteResponse);
+            plugin.runSenderIfActive(sender, resolved -> plugin.getRewardService().handleVoteResponse(resolved.getName(), resolved, voteResponse));
         }, plugin.getAsyncExecutor()).exceptionally(e -> {
-            plugin.runSyncIfActive(() -> sender.sendMessageWithTag("&cHa ocurrido una excepción. Avisa a un administrador"));
+            plugin.runSenderIfActive(sender, resolved -> resolved.sendMessageWithTag("&cHa ocurrido una excepción. Avisa a un administrador"));
             plugin.logError("Excepción intentando votar: " + e.getMessage());
             return null;
         });

@@ -26,9 +26,9 @@ public class StatsCMD extends CSCommand {
             if (!plugin.isActive()) {
                 return;
             }
-            plugin.runSyncIfActive(() -> sendStats(sender, serverStats));
+            plugin.runSenderIfActive(sender, resolved -> sendStats(resolved, serverStats));
         }).exceptionally(ex -> {
-            plugin.runSyncIfActive(() -> sender.sendMessageWithTag("&cHa ocurrido una excepción. Revisa la consola o avisa a un administrador"));
+            plugin.runSenderIfActive(sender, resolved -> resolved.sendMessageWithTag("&cHa ocurrido una excepción. Revisa la consola o avisa a un administrador"));
             plugin.logError("Excepción obteniendo estadisticas: " + ex.getMessage());
             return null;
         });

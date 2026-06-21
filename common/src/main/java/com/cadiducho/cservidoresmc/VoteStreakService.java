@@ -35,8 +35,10 @@ public class VoteStreakService {
     }
 
     public VoteStreakStore.Snapshot recordVote(CSCommandSender sender) {
-        String player = sender.getName();
-        String uuid = sender.getUniqueId();
+        return recordVote(sender.getName(), sender.getUniqueId());
+    }
+
+    public VoteStreakStore.Snapshot recordVote(String player, String uuid) {
         VoteStreakStore.Snapshot snapshot = store.recordStreak(player, uuid, currentDay.get());
         if (!snapshot.isSaved()) {
             debug("No se pudo guardar la racha de " + player + ".");
@@ -98,7 +100,7 @@ public class VoteStreakService {
 
     private void dispatchMilestoneCommand(String command, String player, String uuid, int streak) {
         String parsedCommand = PlayerPlaceholders.applyStreakCommand(command, player, uuid, streak);
-        plugin.runSync(() -> plugin.dispatchCommand(parsedCommand));
+        plugin.getScheduler().runGlobal(() -> plugin.dispatchCommand(parsedCommand));
     }
 
     private Map<Integer, List<String>> rewardsByMilestone() {

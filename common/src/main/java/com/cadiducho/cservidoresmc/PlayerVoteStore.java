@@ -56,20 +56,32 @@ public class PlayerVoteStore {
         return markRewarded(sender.getName(), sender.getUniqueId(), rewardDate, rewardedAt, true);
     }
 
+    public MarkResult markRewarded(String playerName, String uuid, String rewardDate, long rewardedAt) {
+        return markRewarded(playerName, uuid, rewardDate, rewardedAt, true);
+    }
+
     public boolean markRewarded(String playerName, String rewardDate, long rewardedAt) {
         return markRewarded(playerName, "", rewardDate, rewardedAt, false) != MarkResult.FAILED;
     }
 
     public boolean recordVote(CSCommandSender sender, long votedAt) {
-        return recordVote(sender.getName(), sender.getUniqueId(), votedAt);
+        return recordVoteData(sender.getName(), sender.getUniqueId(), votedAt);
     }
 
     public boolean recordVote(String playerName, long votedAt) {
-        return recordVote(playerName, "", votedAt);
+        return recordVoteData(playerName, "", votedAt);
+    }
+
+    public boolean recordVote(String playerName, String uuid, long votedAt) {
+        return recordVoteData(playerName, uuid, votedAt);
     }
 
     public long lastVoteAt(String playerName) {
         return loadByName(playerName).lastVoteAt;
+    }
+
+    public long lastVoteAt(String playerName, String uuid) {
+        return load(playerName, uuid).lastVoteAt;
     }
 
     public long lastVoteAt(CSCommandSender sender) {
@@ -85,11 +97,26 @@ public class PlayerVoteStore {
         return loadByName(playerName).lastReminderAt == voteCycle;
     }
 
+    public boolean wasRemindedFor(String playerName, String uuid, long voteCycle) {
+        return load(playerName, uuid).lastReminderAt == voteCycle;
+    }
+
     public boolean markReminded(String playerName, long voteCycle) {
         return updateByName(playerName, player -> {
             if (!player.hasUuid()) {
                 return UpdateResult.failed(player);
             }
+            player.lastReminderAt = voteCycle;
+            return UpdateResult.saved(player);
+        }).saved;
+    }
+
+    public boolean markReminded(String playerName, String uuid, long voteCycle) {
+        return update(playerName, uuid, player -> {
+            if (!player.hasUuid()) {
+                return UpdateResult.failed(player);
+            }
+            player.name = preferName(player.name, playerName);
             player.lastReminderAt = voteCycle;
             return UpdateResult.saved(player);
         }).saved;
@@ -268,7 +295,7 @@ public class PlayerVoteStore {
         return result.saved ? MarkResult.MARKED : MarkResult.FAILED;
     }
 
-    private boolean recordVote(String playerName, String uuid, long votedAt) {
+    private boolean recordVoteData(String playerName, String uuid, long votedAt) {
         return update(playerName, uuid, player -> {
             if (!player.hasUuid()) {
                 return UpdateResult.failed(player);

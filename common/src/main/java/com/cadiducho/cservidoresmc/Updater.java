@@ -320,9 +320,9 @@ public class Updater {
     }
 
     private void sendLines(CSCommandSender sender, List<String> lines) {
-        plugin.runSyncIfActive(() -> {
+        plugin.runSenderIfActive(sender, resolved -> {
             for (String line : lines) {
-                plugin.sendFormattedMessage(sender, line);
+                plugin.sendFormattedMessage(resolved, line);
             }
         });
     }

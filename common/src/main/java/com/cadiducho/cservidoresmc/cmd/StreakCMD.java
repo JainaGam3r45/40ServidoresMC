@@ -8,7 +8,6 @@ import com.cadiducho.cservidoresmc.api.CSPlugin;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.RejectedExecutionException;
 
 public class StreakCMD extends CSCommand {
 
@@ -68,21 +67,16 @@ public class StreakCMD extends CSCommand {
     }
 
     private void resetAsync(CSPlugin plugin, CSCommandSender sender, VoteStreakService service, String player) {
-        try {
-            plugin.getAsyncExecutor().execute(() -> {
-                boolean reset = service.reset(player);
-                plugin.runSyncIfActive(() -> {
-                    if (reset) {
-                        sender.sendMessageWithTag("&aRacha de &e" + player + " &areiniciada correctamente.");
-                    } else {
-                        sender.sendMessageWithTag("&cNo se pudo reiniciar la racha de &e" + player + "&c.");
-                    }
-                });
+        plugin.getScheduler().runAsync(() -> {
+            boolean reset = service.reset(player);
+            plugin.runSenderIfActive(sender, resolved -> {
+                if (reset) {
+                    resolved.sendMessageWithTag("&aRacha de &e" + player + " &areiniciada correctamente.");
+                } else {
+                    resolved.sendMessageWithTag("&cNo se pudo reiniciar la racha de &e" + player + "&c.");
+                }
             });
-        } catch (RejectedExecutionException ex) {
-            sender.sendMessageWithTag("&cEl servicio está ocupado. Inténtalo de nuevo en unos segundos.");
-            plugin.logError("No se pudo encolar el reinicio de racha: " + ex.getMessage());
-        }
+        });
     }
 
     private void sendHelp(CSCommandSender sender) {
