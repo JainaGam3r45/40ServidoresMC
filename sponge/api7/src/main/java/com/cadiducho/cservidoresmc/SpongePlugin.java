@@ -44,7 +44,7 @@ import java.util.concurrent.Executor;
 @Plugin(id = "cservidoresmc", name = "40ServidoresMC", version = SpongePlugin.PLUGIN_VERSION)
 public class SpongePlugin implements CSPlugin {
 
-    public static final String PLUGIN_VERSION = "3.2.1";
+    public static final String PLUGIN_VERSION = "3.2.2";
     @Inject private Logger logger;
     @Inject private Game game;
 
