@@ -45,6 +45,9 @@ permissions:
     40servidores.streak:
         description: Permite ver y resetear rachas de voto
         default: op
+    40servidores.streak.view:
+        description: Permite consultar rachas de voto con información técnica
+        default: op
     40servidores.test:
         description: Permite probar las recompensas configuradas
         default: op

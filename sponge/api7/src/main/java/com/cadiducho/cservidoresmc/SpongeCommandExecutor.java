@@ -47,7 +47,7 @@ public class SpongeCommandExecutor implements CommandCallable {
 
     @Override
     public boolean testPermission(CommandSource source) {
-        return source.hasPermission(command.getPermission());
+        return command.getPermission() == null || source.hasPermission(command.getPermission());
     }
 
     @Override
