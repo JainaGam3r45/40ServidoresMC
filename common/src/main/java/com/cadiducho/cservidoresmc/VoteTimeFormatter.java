@@ -2,12 +2,12 @@ package com.cadiducho.cservidoresmc;
 
 import java.util.concurrent.TimeUnit;
 
-class VoteTimeFormatter {
+public class VoteTimeFormatter {
 
     private VoteTimeFormatter() {
     }
 
-    static String formatDuration(long millis) {
+    public static String formatDuration(long millis) {
         long safeMillis = Math.max(0L, millis);
         long days = TimeUnit.MILLISECONDS.toDays(safeMillis);
         long hours = TimeUnit.MILLISECONDS.toHours(safeMillis) % 24L;

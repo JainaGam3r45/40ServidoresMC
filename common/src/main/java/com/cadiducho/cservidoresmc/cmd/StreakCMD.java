@@ -1,5 +1,6 @@
 package com.cadiducho.cservidoresmc.cmd;
 
+import com.cadiducho.cservidoresmc.Cooldown;
 import com.cadiducho.cservidoresmc.VoteStreakService;
 import com.cadiducho.cservidoresmc.VoteStreakStore;
 import com.cadiducho.cservidoresmc.VoteReminderService;
@@ -19,6 +20,7 @@ public class StreakCMD extends CSCommand {
     private static final String VIEW_PERMISSION = "40servidores.streak.view";
     private static final String RESET_PERMISSION = "40servidores.streak";
     private static final DateTimeFormatter DISPLAY_DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private final Cooldown cooldown = new Cooldown(5);
 
     protected StreakCMD() {
         super("streak40", null, Collections.emptyList(),
@@ -28,6 +30,10 @@ public class StreakCMD extends CSCommand {
 
     @Override
     public CommandResult execute(CSPlugin plugin, CSCommandSender sender, String label, List<String> args) {
+        if (!sender.isConsole() && isReadOperation(args) && cooldown.isCoolingDown(sender.getName())) {
+            return CommandResult.COOLDOWN;
+        }
+
         VoteStreakService service = plugin.getVoteStreakService();
         if (service == null) {
             sender.sendMessageWithTag("&cEl sistema de rachas no está disponible.");
@@ -39,6 +45,7 @@ public class StreakCMD extends CSCommand {
                 sendConsoleUsage(sender);
                 return CommandResult.SUCCESS;
             }
+            cooldown.setOnCooldown(sender.getName());
             sendOwnStreak(plugin, sender, service);
             return CommandResult.SUCCESS;
         }
@@ -52,6 +59,9 @@ public class StreakCMD extends CSCommand {
             if (args.size() < 2 || args.get(1).trim().isEmpty()) {
                 sendConsoleUsage(sender);
                 return CommandResult.SUCCESS;
+            }
+            if (!sender.isConsole()) {
+                cooldown.setOnCooldown(sender.getName());
             }
             String player = args.get(1);
             VoteStreakStore.Snapshot snapshot = service.cachedFind(player, "");
@@ -197,5 +207,14 @@ public class StreakCMD extends CSCommand {
 
     private void sendConsoleUsage(CSCommandSender sender) {
         sender.sendMessageWithTag("&cUso: /streak40 view <jugador>");
+    }
+
+    private boolean isReadOperation(List<String> args) {
+        return args.isEmpty() || args.get(0).trim().isEmpty() || "view".equalsIgnoreCase(args.get(0));
+    }
+
+    @Override
+    public int cooldownSecondsLeft(CSCommandSender sender, List<String> args) {
+        return cooldown.getTimeLeft(sender.getName());
     }
 }

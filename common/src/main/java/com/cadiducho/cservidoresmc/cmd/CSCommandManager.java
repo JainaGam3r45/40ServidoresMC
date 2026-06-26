@@ -57,7 +57,10 @@ public class CSCommandManager {
             CSCommand.CommandResult result = cmd.execute(plugin, sender, label, args);
             switch (result) {
                 case COOLDOWN:
-                    sender.sendMessageWithTag("&6No puedes ejecutar este comando tantas veces seguidas!");
+                    String cooldownMessage = cmd.cooldownMessage(sender, label, args);
+                    if (cooldownMessage != null && !cooldownMessage.trim().isEmpty()) {
+                        sender.sendMessageWithTag(cooldownMessage);
+                    }
                     break;
                 case NO_PERMISSION:
                     sender.sendMessageWithTag("&cNo tienes permiso para usar este comando");

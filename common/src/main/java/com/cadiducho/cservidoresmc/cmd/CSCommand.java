@@ -1,5 +1,6 @@
 package com.cadiducho.cservidoresmc.cmd;
 
+import com.cadiducho.cservidoresmc.VoteTimeFormatter;
 import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.api.CSPlugin;
 import lombok.Getter;
@@ -33,6 +34,21 @@ public abstract class CSCommand {
 
     public boolean isAuthorized(CSCommandSender sender) {
         return this.permission == null || sender.hasPermission(this.permission);
+    }
+
+    public int cooldownSecondsLeft(CSCommandSender sender, List<String> args) {
+        return 0;
+    }
+
+    public String cooldownMessage(CSCommandSender sender, String label, List<String> args) {
+        int seconds = cooldownSecondsLeft(sender, args);
+        if (seconds <= 0) {
+            return "";
+        }
+        String command = label == null || label.trim().isEmpty() ? name : label;
+        return "&ePodrás volver a ejecutar &6/" + command + " &een &6"
+                + VoteTimeFormatter.formatDuration(seconds * 1000L)
+                + "&e.";
     }
 
     public enum CommandResult {

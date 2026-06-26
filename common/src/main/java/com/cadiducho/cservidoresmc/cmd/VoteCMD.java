@@ -19,7 +19,7 @@ public class VoteCMD extends CSCommand {
                 "Usa /voto40 àra validar tu voto en el servidor");
     }
 
-    final Cooldown cooldown = new Cooldown(60);
+    final Cooldown cooldown = new Cooldown(10);
 
     @Override
     public CommandResult execute(CSPlugin plugin, CSCommandSender sender, String label, List<String> args) {
@@ -50,5 +50,10 @@ public class VoteCMD extends CSCommand {
         });
 
         return CommandResult.SUCCESS;
+    }
+
+    @Override
+    public int cooldownSecondsLeft(CSCommandSender sender, List<String> args) {
+        return cooldown.getTimeLeft(sender.getName());
     }
 }

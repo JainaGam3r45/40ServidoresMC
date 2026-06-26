@@ -1,5 +1,6 @@
 package com.cadiducho.cservidoresmc.cmd;
 
+import com.cadiducho.cservidoresmc.Cooldown;
 import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.api.CSPlugin;
 import com.cadiducho.cservidoresmc.model.ServerStats;
@@ -14,6 +15,8 @@ import java.util.List;
  */
 public class StatsCMD extends CSCommand {
 
+    private final Cooldown cooldown = new Cooldown(10);
+
     public StatsCMD() {
         super("stats40", "40servidores.stats", Collections.emptyList(),
                 "Comprueba las estadísticas de voto",
@@ -22,6 +25,12 @@ public class StatsCMD extends CSCommand {
 
     @Override
     public CommandResult execute(CSPlugin plugin, CSCommandSender sender, String label, List<String> args) {
+        if (!sender.isConsole() && cooldown.isCoolingDown(sender.getName())) {
+            return CommandResult.COOLDOWN;
+        }
+        if (!sender.isConsole()) {
+            cooldown.setOnCooldown(sender.getName());
+        }
         plugin.getApiClient().fetchServerStats().thenAccept((ServerStats serverStats) -> {
             if (!plugin.isActive()) {
                 return;
@@ -33,6 +42,11 @@ public class StatsCMD extends CSCommand {
             return null;
         });
         return CommandResult.SUCCESS;
+    }
+
+    @Override
+    public int cooldownSecondsLeft(CSCommandSender sender, List<String> args) {
+        return cooldown.getTimeLeft(sender.getName());
     }
 
     private void sendStats(CSCommandSender sender, ServerStats serverStats) {
