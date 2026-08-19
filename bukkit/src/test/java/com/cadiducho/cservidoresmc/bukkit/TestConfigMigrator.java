@@ -67,6 +67,12 @@ public class TestConfigMigrator {
         assertTrue(migrated.contains("  prefix: \"&8[&bCustom&8]\""));
         assertTrue(migrated.contains("  voteClaim: \"&dPremio propio\""));
         assertTrue(migrated.contains("  alreadyRewarded: \"&aYa reclamaste. Vuelve en %time%.\""));
+        assertTrue(migrated.contains("  commands:"));
+        assertTrue(migrated.contains("    noPermission:"));
+        assertTrue(migrated.contains("  metrics:"));
+        assertTrue(migrated.contains("    lines:"));
+        assertFalse(migrated.contains("invalidApiKey:"));
+        assertFalse(migrated.contains("    updateAvailable:"));
         assertTrue(migrated.contains("updater:\n"));
         assertTrue(migrated.contains("  notifyConsole: true"));
         assertTrue(migrated.contains("  notifyAdminsOnJoin: true"));

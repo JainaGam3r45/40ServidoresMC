@@ -20,10 +20,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestRewardService {
+
+    private static final String PLAYER_UUID = "0f50d3c1-2d53-47d8-9f5a-10153b5f9770";
 
     @TempDir
     File tempDir;
@@ -146,6 +152,80 @@ public class TestRewardService {
 
         assertEquals(false, sender.messages.contains("&6No has votado hoy! Puedes hacerlo en &a https://40servidoresmc.es"));
         assertEquals(true, sender.messages.get(sender.messages.size() - 1).contains("Ya has votado y recibido tu recompensa"));
+    }
+
+    @Test
+    void nextDayNotVotedShowsLinkAfterStaleSuccess() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        AtomicLong clock = new AtomicLong(1_000L);
+        AtomicReference<String> date = new AtomicReference<>("2026-06-18");
+        PlayerVoteStore store = new PlayerVoteStore(tempDir, plugin);
+        RewardService rewardService = new RewardService(plugin, store, plugin.scheduler, date::get, clock::get);
+        plugin.setRewardService(rewardService);
+        plugin.setApiClient(new FakeApiClient(plugin));
+        TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
+
+        rewardService.deliverReward(sender, true);
+        clock.addAndGet(VoteReminderService.VOTE_COOLDOWN_MILLIS + 1L);
+        date.set("2026-06-19");
+
+        plugin.setApiClient(new FakeApiClient(plugin, vote("0")));
+        sender.messages.clear();
+        rewardService.handleVoteResponse(sender.getName(), sender, vote("1"));
+
+        assertTrue(sender.messages.stream().anyMatch(message -> message.contains("https://40servidoresmc.es")));
+        assertFalse(sender.messages.stream().anyMatch(message -> message.contains("Aqui tienes tu premio")));
+        assertEquals(1, plugin.commands.size());
+        assertEquals(1, plugin.getPluginMetrics().getRewardsDelivered());
+    }
+
+    @Test
+    void nextDaySuccessStillDeliversWhenConfirmed() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        AtomicLong clock = new AtomicLong(1_000L);
+        AtomicReference<String> date = new AtomicReference<>("2026-06-18");
+        PlayerVoteStore store = new PlayerVoteStore(tempDir, plugin);
+        RewardService rewardService = new RewardService(plugin, store, plugin.scheduler, date::get, clock::get);
+        plugin.setRewardService(rewardService);
+        plugin.setApiClient(new FakeApiClient(plugin));
+        TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
+
+        rewardService.deliverReward(sender, true);
+        clock.addAndGet(VoteReminderService.VOTE_COOLDOWN_MILLIS + 1L);
+        date.set("2026-06-19");
+
+        plugin.setApiClient(new FakeApiClient(plugin, vote("1")));
+        rewardService.handleVoteResponse(sender.getName(), sender, vote("1"));
+
+        assertEquals(2, plugin.commands.size());
+        assertEquals(2, plugin.getPluginMetrics().getRewardsDelivered());
+    }
+
+    @Test
+    void alreadyVotedDoesNotPoisonRewardDate() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        AtomicLong clock = new AtomicLong(1_000L);
+        AtomicReference<String> date = new AtomicReference<>("2026-06-18");
+        PlayerVoteStore store = new PlayerVoteStore(tempDir, plugin);
+        RewardService rewardService = new RewardService(plugin, store, plugin.scheduler, date::get, clock::get);
+        plugin.setRewardService(rewardService);
+        plugin.setApiClient(new FakeApiClient(plugin));
+        TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
+
+        rewardService.deliverReward(sender, true);
+        clock.addAndGet(VoteReminderService.VOTE_COOLDOWN_MILLIS + 1L);
+        date.set("2026-06-19");
+
+        rewardService.handleVoteResponse(sender.getName(), sender, vote("2"));
+        assertEquals("2026-06-18", store.lastRewardDate("Cadiducho", PLAYER_UUID));
+
+        sender.messages.clear();
+        rewardService.handleVoteResponse(sender.getName(), sender, vote("0"));
+        assertTrue(sender.messages.stream().anyMatch(message -> message.contains("https://40servidoresmc.es")));
+        assertEquals("2026-06-18", store.lastRewardDate("Cadiducho", PLAYER_UUID));
     }
 
     private RewardService rewardService(TestPlugin plugin, TestScheduler scheduler) {
@@ -348,7 +428,7 @@ public class TestRewardService {
 
         private TestSender(String name) {
             this.name = name;
-            this.uuid = "0f50d3c1-2d53-47d8-9f5a-10153b5f9770";
+            this.uuid = PLAYER_UUID;
         }
 
         @Override

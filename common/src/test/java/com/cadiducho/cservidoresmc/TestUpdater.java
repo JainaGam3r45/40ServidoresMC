@@ -108,9 +108,10 @@ public class TestUpdater {
 
     @Test
     void sanitizesRemoteReleaseText() {
+        UpdateNoticeFormatter formatter = new UpdateNoticeFormatter();
         String dirty = "## &cCambios §ksecretos\n\n* [Release](https://example.com) con `markdown` y texto extra";
 
-        String clean = UpdateNoticeFormatter.sanitizeSummary(dirty);
+        String clean = formatter.sanitizeSummary(dirty);
 
         assertFalse(clean.contains("&c"));
         assertFalse(clean.contains("§"));

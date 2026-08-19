@@ -12,7 +12,9 @@ import org.junit.jupiter.api.Test;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -136,6 +138,7 @@ public class TestStatsCommand {
 
     private static class TestPlugin implements CSPlugin {
 
+        private final TestConfiguration configuration = new TestConfiguration(this);
         private ApiClient apiClient;
         private boolean active = true;
         private final PluginMetrics metrics = new PluginMetrics();
@@ -160,7 +163,7 @@ public class TestStatsCommand {
 
         @Override
         public CSConfiguration getCSConfiguration() {
-            return null;
+            return configuration;
         }
 
         @Override
@@ -204,6 +207,50 @@ public class TestStatsCommand {
 
         @Override
         public void broadcastMessage(String message) {
+        }
+    }
+
+    private static class TestConfiguration implements CSConfiguration {
+
+        private final CSPlugin plugin;
+        private final Map<String, String> strings = new HashMap<>();
+
+        private TestConfiguration(CSPlugin plugin) {
+            this.plugin = plugin;
+        }
+
+        @Override
+        public void reload() {
+        }
+
+        @Override
+        public String getString(String key, String defValue) {
+            return strings.containsKey(key) ? strings.get(key) : defValue;
+        }
+
+        @Override
+        public int getInt(String key, int defValue) {
+            return defValue;
+        }
+
+        @Override
+        public boolean getBoolean(String key, boolean defValue) {
+            return defValue;
+        }
+
+        @Override
+        public List<String> getStringList(String path, List<String> def) {
+            return def;
+        }
+
+        @Override
+        public Map<String, String> getStringMap(String path, Map<String, String> def) {
+            return def;
+        }
+
+        @Override
+        public CSPlugin getPlugin() {
+            return plugin;
         }
     }
 }
