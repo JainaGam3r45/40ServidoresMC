@@ -21,13 +21,31 @@ Claves principales:
 | `messages.prefix` | Prefijo de los mensajes del plugin. |
 | `messages.voteClaim` | Mensaje al entregar una recompensa de voto. |
 | `messages.alreadyRewarded` | Mensaje cuando el jugador ya recibió la recompensa. Usa `%time%`. |
+| `messages.commands.*` | Errores genéricos de comandos (`noPermission`, `onlyPlayer`, `unexpectedError`, `cooldown`). |
+| `messages.apiException` | Error genérico de la API en voto y estadísticas. |
+| `messages.vote.*` | Mensajes del flujo de voto (`checking`, `notVotedToday`, `alreadyClaimed`, `error`, `rewardSaveFailed`). |
+| `messages.stats.lines` | Lista de líneas de `/stats40`. Placeholders: `%server%`, `%rank%`, `%votesToday%`, `%rewardedToday%`, `%votesWeek%`, `%rewardedWeek%`, `%lastVotes%`. |
+| `messages.streak.own.lines` / `admin.lines` / `usage.lines` | Listas de líneas de `/streak40`. |
+| `messages.streak.formats.*` | Textos para fechas y disponibilidad de voto en rachas. |
+| `messages.metrics.lines` | Lista de líneas de `/metrics40`. Placeholders: `%apiRequests%`, `%apiFailures%`, `%retries%`, `%httpRejections%`, `%voteChecks%`, `%rewardsDelivered%`. |
+| `messages.reload.lines` | Lista de líneas de `/reload40`. Placeholder: `%version%`. |
+| `messages.test.lines` | Lista de líneas de `/test40`. Placeholder: `%voteClaim%`. |
 | `broadcast.enabled` / `broadcast.message` | Activa y configura el anuncio global de recompensa. |
 | `rewards.commands` | Comandos ejecutados desde consola al premiar un voto. |
 | `streakRewards` | Premios por hitos de racha. |
 | `autoReward` | Reintentos automáticos tras votar en la web. |
 | `voteReminder` | Recordatorios locales para volver a votar. |
 
-Las claves antiguas como `clave`, `mensaje`, `tag` y `comandosCustom` siguen funcionando como fallback, pero el migrador las moverá a la estructura nueva para evitar confusión.
+Las claves antiguas como `clave`, `mensaje`, `tag` y `comandosCustom` siguen funcionando como fallback, pero el migrador las moverá a la estructura nueva para evitar confusión. Si falta una clave nueva de `messages.*`, el plugin usa el texto en español embebido en el código como respaldo. Las configs v9 con claves por línea (`messages.metrics.header`, etc.) se convierten automáticamente a listas si falta `messages.*.lines`.
+
+Los bloques multi-línea usan listas YAML. Puedes reordenar, añadir u omitir entradas, e insertar líneas vacías con `- ""`. Si una línea contiene un placeholder cuyo valor está vacío (por ejemplo `%lastVotes%` sin votos recientes), esa línea no se imprime.
+
+Mensajes no configurables
+------------
+Estos textos están fijados en el código y no tienen claves en `config.yml`:
+
+- Avisos del **updater** (actualización disponible, al día, error de comprobación).
+- Mensaje de **clave API incorrecta** (`invalidApiKey`), que incluye la URL oficial de 40ServidoresMC.
 
 Placeholders en la configuración
 ------------
@@ -35,10 +53,20 @@ Estos placeholders los resuelve el propio plugin al enviar mensajes o ejecutar c
 
 | Placeholder | Dónde se usa | Descripción |
 | --- | --- | --- |
-| `%player%` | `rewards.commands`, `broadcast.message`, `streakRewards` | Nombre del jugador premiado. |
-| `%time%` | `messages.alreadyRewarded` | Tiempo restante hasta poder volver a votar. |
-| `%uuid%` | `streakRewards` | UUID del jugador al entregar un premio de racha. |
-| `%streak%` | `streakRewards` | Racha actual al entregar un premio de racha. |
+| `%player%` | `rewards.commands`, `broadcast.message`, `streakRewards`, `messages.streak.*` | Nombre del jugador premiado o consultado. |
+| `%time%` | `messages.alreadyRewarded`, `messages.commands.cooldown`, `messages.streak.formats.canVoteIn` | Tiempo restante hasta poder volver a votar o usar un comando. |
+| `%command%` | `messages.commands.cooldown` | Etiqueta del comando en cooldown. |
+| `%web%` | Prefijo de enlace cuando el jugador no ha votado (se concatena con la URL de la API). | Texto antes del enlace clicable. |
+| `%server%` / `%rank%` | `messages.stats.lines` | Nombre del servidor y posición en el ranking. |
+| `%votesToday%` / `%rewardedToday%` / `%votesWeek%` / `%rewardedWeek%` | `messages.stats.lines` | Contadores de votos. |
+| `%lastVotes%` | `messages.stats.lines` | Lista formateada de últimos votos. Se omite la línea si no hay datos. |
+| `%apiRequests%` / `%apiFailures%` / `%retries%` / `%httpRejections%` / `%voteChecks%` / `%rewardsDelivered%` | `messages.metrics.lines` | Contadores de métricas internas. |
+| `%streak%` / `%bestStreak%` | `messages.streak.own.lines`, `messages.streak.admin.lines`, `streakRewards` | Racha actual o mejor racha registrada. |
+| `%lastVote%` / `%canVote%` | `messages.streak.own.lines` | Texto amigable del último voto o cuándo puede votar de nuevo. |
+| `%player%` / `%uuid%` / `%milestones%` | `messages.streak.admin.lines`, `streakRewards` | Datos del jugador consultado o premiado. |
+| `%days%` | `messages.streak.formats.daysAgo` | Días transcurridos desde el último voto. |
+| `%version%` | `messages.reload.lines` | Versión del plugin en ejecución. |
+| `%voteClaim%` | `messages.test.lines` | Mensaje de recompensa configurado en `messages.voteClaim`. |
 
 Las plantillas por defecto usan `%player%`. Las configuraciones antiguas con `{0}` siguen funcionando como compatibilidad hacia atrás.
 
