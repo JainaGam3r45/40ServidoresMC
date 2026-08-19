@@ -24,8 +24,9 @@ public class ReloadCMD extends CSCommand {
         plugin.getCSConfiguration().reload();
         plugin.getApiClient().invalidateAllCache();
 
-        sender.sendMessageWithTag("&aConfiguración recargada correctamente");
-        sender.sendMessageWithTag("&aFuncionando la versión " + plugin.getPluginVersion());
+        com.cadiducho.cservidoresmc.PluginMessages.sendLines(
+                sender,
+                plugin.getPluginMessages().reloadLines(plugin.getPluginVersion()));
 
         plugin.log("Configuracion recargada");
         return CommandResult.SUCCESS;

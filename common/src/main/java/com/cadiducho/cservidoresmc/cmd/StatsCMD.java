@@ -1,6 +1,7 @@
 package com.cadiducho.cservidoresmc.cmd;
 
 import com.cadiducho.cservidoresmc.Cooldown;
+import com.cadiducho.cservidoresmc.PluginMessages;
 import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.api.CSPlugin;
 import com.cadiducho.cservidoresmc.model.ServerStats;
@@ -35,9 +36,9 @@ public class StatsCMD extends CSCommand {
             if (!plugin.isActive()) {
                 return;
             }
-            plugin.runSenderIfActive(sender, resolved -> sendStats(resolved, serverStats));
+            plugin.runSenderIfActive(sender, resolved -> sendStats(plugin, resolved, serverStats));
         }).exceptionally(ex -> {
-            plugin.runSenderIfActive(sender, resolved -> resolved.sendMessageWithTag("&cHa ocurrido una excepción. Revisa la consola o avisa a un administrador"));
+            plugin.runSenderIfActive(sender, resolved -> resolved.sendMessageWithTag(plugin.getPluginMessages().statsException()));
             plugin.logError("Excepción obteniendo estadisticas: " + ex.getMessage());
             return null;
         });
@@ -49,26 +50,27 @@ public class StatsCMD extends CSCommand {
         return cooldown.getTimeLeft(sender.getName());
     }
 
-    private void sendStats(CSCommandSender sender, ServerStats serverStats) {
-        if (serverStats.getServerName() == null) { //clave mal configurada
-            sender.sendMessageWithTag("&cClave incorrecta. Entra en &bhttps://40servidoresmc.es/miservidor.php &cy cambia esta.");
+    private void sendStats(CSPlugin plugin, CSCommandSender sender, ServerStats serverStats) {
+        PluginMessages messages = plugin.getPluginMessages();
+        if (serverStats.getServerName() == null) {
+            sender.sendMessageWithTag(messages.invalidApiKey());
             return;
         }
 
-        sender.sendMessageWithTag("&9==> &7" + serverStats.getServerName() + " &festá en el TOP &a" + serverStats.getPosition());
-        sender.sendMessageWithTag("&bVotos hoy: &6" + serverStats.getDayVotes());
-        sender.sendMessageWithTag("&bVotos premiados hoy: &6" + serverStats.getRewardedDayVotes());
-        sender.sendMessageWithTag("&bVotos semanales: &6" + serverStats.getWeekVotes());
-        sender.sendMessageWithTag("&bVotos premiados semanales: &6" + serverStats.getRewardedWeekVotes());
+        String lastVotes = formatLastVotes(serverStats);
+        PluginMessages.sendLines(sender, messages.statsLines(serverStats, lastVotes));
+    }
 
-        if (serverStats.getLastVotes() != null && !serverStats.getLastVotes().isEmpty()) {
-            StringBuilder usuarios = new StringBuilder();
-            for (ServerVote vote : serverStats.getLastVotes()) {
-                String color = vote.isRewarded() ? "&a" : "&c";
-                usuarios.append(color).append(vote.getName()).append("&6, ");
-            }
-            usuarios = new StringBuilder(usuarios.substring(0, usuarios.length() - 2) + ".");
-            sender.sendMessageWithTag("&bÚltimos 20 votos: " + usuarios.toString());
+    private String formatLastVotes(ServerStats serverStats) {
+        if (serverStats.getLastVotes() == null || serverStats.getLastVotes().isEmpty()) {
+            return "";
         }
+
+        StringBuilder usuarios = new StringBuilder();
+        for (ServerVote vote : serverStats.getLastVotes()) {
+            String color = vote.isRewarded() ? "&a" : "&c";
+            usuarios.append(color).append(vote.getName()).append("&6, ");
+        }
+        return usuarios.substring(0, usuarios.length() - 2) + ".";
     }
 }

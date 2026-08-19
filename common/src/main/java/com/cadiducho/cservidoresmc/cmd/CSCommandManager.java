@@ -1,5 +1,7 @@
 package com.cadiducho.cservidoresmc.cmd;
 
+import com.cadiducho.cservidoresmc.PluginMessages;
+import com.cadiducho.cservidoresmc.VoteTimeFormatter;
 import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.api.CSPlugin;
 import lombok.Getter;
@@ -50,26 +52,29 @@ public class CSCommandManager {
         Optional<CSCommand> command = Optional.ofNullable(commands.getOrDefault(label, null));
         if (command.isPresent()) {
             CSCommand cmd = command.get();
+            PluginMessages messages = plugin.getPluginMessages();
             if (!cmd.isAuthorized(sender)) {
-                sender.sendMessageWithTag("&cNo tienes permiso para usar este comando");
+                sender.sendMessageWithTag(messages.noPermission());
                 return;
             }
             CSCommand.CommandResult result = cmd.execute(plugin, sender, label, args);
             switch (result) {
                 case COOLDOWN:
-                    String cooldownMessage = cmd.cooldownMessage(sender, label, args);
-                    if (cooldownMessage != null && !cooldownMessage.trim().isEmpty()) {
-                        sender.sendMessageWithTag(cooldownMessage);
+                    int seconds = cmd.cooldownSecondsLeft(sender, args);
+                    if (seconds > 0) {
+                        String commandLabel = label == null || label.trim().isEmpty() ? cmd.getName() : label;
+                        sender.sendMessageWithTag(messages.cooldown(commandLabel,
+                                VoteTimeFormatter.formatDuration(seconds * 1000L)));
                     }
                     break;
                 case NO_PERMISSION:
-                    sender.sendMessageWithTag("&cNo tienes permiso para usar este comando");
+                    sender.sendMessageWithTag(messages.noPermission());
                     break;
                 case ERROR:
-                    sender.sendMessageWithTag("&cHa ocurrido un error inesperado");
+                    sender.sendMessageWithTag(messages.unexpectedError());
                     break;
                 case ONLY_PLAYER:
-                    sender.sendMessageWithTag("&cEste comando sólo puede ser ejecutado por usuarios");
+                    sender.sendMessageWithTag(messages.onlyPlayer());
                     break;
             }
         }

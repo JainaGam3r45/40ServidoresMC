@@ -1,6 +1,7 @@
 package com.cadiducho.cservidoresmc.cmd;
 
 import com.cadiducho.cservidoresmc.Cooldown;
+import com.cadiducho.cservidoresmc.PluginMessages;
 import com.cadiducho.cservidoresmc.VoteStreakService;
 import com.cadiducho.cservidoresmc.VoteStreakStore;
 import com.cadiducho.cservidoresmc.VoteReminderService;
@@ -35,18 +36,19 @@ public class StreakCMD extends CSCommand {
         }
 
         VoteStreakService service = plugin.getVoteStreakService();
+        PluginMessages messages = plugin.getPluginMessages();
         if (service == null) {
-            sender.sendMessageWithTag("&cEl sistema de rachas no está disponible.");
+            sender.sendMessageWithTag(messages.streakUnavailable());
             return CommandResult.SUCCESS;
         }
 
         if (args.isEmpty() || args.get(0).trim().isEmpty()) {
             if (sender.isConsole()) {
-                sendConsoleUsage(sender);
+                sendConsoleUsage(sender, messages);
                 return CommandResult.SUCCESS;
             }
             cooldown.setOnCooldown(sender.getName());
-            sendOwnStreak(plugin, sender, service);
+            sendOwnStreak(plugin, sender, service, messages);
             return CommandResult.SUCCESS;
         }
 
@@ -57,7 +59,7 @@ public class StreakCMD extends CSCommand {
                 return CommandResult.NO_PERMISSION;
             }
             if (args.size() < 2 || args.get(1).trim().isEmpty()) {
-                sendConsoleUsage(sender);
+                sendConsoleUsage(sender, messages);
                 return CommandResult.SUCCESS;
             }
             if (!sender.isConsole()) {
@@ -67,10 +69,10 @@ public class StreakCMD extends CSCommand {
             VoteStreakStore.Snapshot snapshot = service.cachedFind(player, "");
             if (snapshot == null) {
                 service.requestLoad(player, "");
-                sender.sendMessageWithTag(loadingMessage(player));
+                sender.sendMessageWithTag(messages.streakLoading(player));
                 return CommandResult.SUCCESS;
             }
-            sendAdminStreak(sender, snapshot, player);
+            sendAdminStreak(sender, snapshot, player, messages);
             return CommandResult.SUCCESS;
         }
 
@@ -79,19 +81,19 @@ public class StreakCMD extends CSCommand {
                 return CommandResult.NO_PERMISSION;
             }
             if (args.size() < 2 || args.get(1).trim().isEmpty()) {
-                sendHelp(sender);
+                sendHelp(sender, messages);
                 return CommandResult.SUCCESS;
             }
             String player = args.get(1);
-            resetAsync(plugin, sender, service, player);
+            resetAsync(plugin, sender, service, player, messages);
             return CommandResult.SUCCESS;
         }
 
-        sendHelp(sender);
+        sendHelp(sender, messages);
         return CommandResult.SUCCESS;
     }
 
-    private void sendOwnStreak(CSPlugin plugin, CSCommandSender sender, VoteStreakService service) {
+    private void sendOwnStreak(CSPlugin plugin, CSCommandSender sender, VoteStreakService service, PluginMessages messages) {
         String player = sender.getName();
         String uuid = sender.getUniqueId();
         VoteStreakStore.Snapshot snapshot = service.cachedFind(player, uuid);
@@ -101,7 +103,7 @@ public class StreakCMD extends CSCommand {
             if (reminderService != null) {
                 reminderService.requestLoad(player, uuid);
             }
-            sender.sendMessageWithTag(loadingMessage(player));
+            sender.sendMessageWithTag(messages.streakLoading(player));
             return;
         }
 
@@ -109,31 +111,34 @@ public class StreakCMD extends CSCommand {
         long lastVoteAt = reminderService == null ? 0L : reminderService.cachedLastVoteAt(player, uuid);
         long nextVoteInMillis = reminderService == null ? -1L : reminderService.cachedNextVoteInMillis(player, uuid);
 
-        sender.sendMessageWithTag("&9Tu racha de votos");
-        sender.sendMessageWithTag("&bRacha actual: &6" + snapshot.getStreak() + " días");
-        sender.sendMessageWithTag("&bMejor racha: &6" + snapshot.getBestStreak() + " días");
-        sender.sendMessageWithTag("&bÚltimo voto: &6" + friendlyLastVote(snapshot.getLastDay()));
-        sender.sendMessageWithTag("&bPuedes volver a votar: &6" + friendlyVoteAvailability(lastVoteAt, nextVoteInMillis));
-        sender.sendMessageWithTag("&a¡Vota hoy para mantener tu racha!");
+        PluginMessages.sendLines(sender, messages.streakOwnLines(
+                snapshot.getStreak(),
+                snapshot.getBestStreak(),
+                friendlyLastVote(messages, snapshot.getLastDay()),
+                friendlyVoteAvailability(messages, lastVoteAt, nextVoteInMillis)));
     }
 
-    private void sendAdminStreak(CSCommandSender sender, VoteStreakStore.Snapshot snapshot, String requestedPlayer) {
+    private void sendAdminStreak(CSCommandSender sender, VoteStreakStore.Snapshot snapshot, String requestedPlayer, PluginMessages messages) {
         String player = snapshot.getPlayer().isEmpty() ? requestedPlayer : snapshot.getPlayer();
-        sender.sendMessageWithTag("&9Racha de &e" + player + "&9:");
-        sender.sendMessageWithTag("&bRacha actual: &6" + snapshot.getStreak());
-        sender.sendMessageWithTag("&bMejor racha: &6" + snapshot.getBestStreak());
-        sender.sendMessageWithTag("&bÚltimo día de voto: &6" + emptyValue(snapshot.getLastDay()));
-        sender.sendMessageWithTag("&bUUID: &6" + emptyValue(snapshot.getUuid()));
-        sender.sendMessageWithTag("&bMilestones premiados: &6" + (snapshot.getRewardedMilestones().isEmpty() ? "ninguno" : snapshot.getRewardedMilestones().toString()));
+        String milestones = snapshot.getRewardedMilestones().isEmpty()
+                ? messages.streakNone()
+                : snapshot.getRewardedMilestones().toString();
+        PluginMessages.sendLines(sender, messages.streakAdminLines(
+                player,
+                snapshot.getStreak(),
+                snapshot.getBestStreak(),
+                emptyValue(messages, snapshot.getLastDay()),
+                emptyValue(messages, snapshot.getUuid()),
+                milestones));
     }
 
-    private String emptyValue(String value) {
-        return value == null || value.isEmpty() ? "ninguno" : value;
+    private String emptyValue(PluginMessages messages, String value) {
+        return value == null || value.isEmpty() ? messages.streakNone() : value;
     }
 
-    private String friendlyLastVote(String lastDay) {
+    private String friendlyLastVote(PluginMessages messages, String lastDay) {
         if (lastDay == null || lastDay.trim().isEmpty()) {
-            return "sin votos registrados";
+            return messages.streakNoVotesYet();
         }
 
         try {
@@ -141,13 +146,13 @@ public class StreakCMD extends CSCommand {
             LocalDate today = LocalDate.now();
             long days = ChronoUnit.DAYS.between(voteDay, today);
             if (days == 0L) {
-                return "hoy";
+                return messages.streakToday();
             }
             if (days == 1L) {
-                return "ayer";
+                return messages.streakYesterday();
             }
             if (days > 1L && days <= 7L) {
-                return "hace " + days + " días";
+                return messages.streakDaysAgo(days);
             }
             return DISPLAY_DATE.format(voteDay);
         } catch (DateTimeParseException ignored) {
@@ -155,14 +160,14 @@ public class StreakCMD extends CSCommand {
         }
     }
 
-    private String friendlyVoteAvailability(long lastVoteAt, long nextVoteInMillis) {
+    private String friendlyVoteAvailability(PluginMessages messages, long lastVoteAt, long nextVoteInMillis) {
         if (lastVoteAt <= 0L) {
-            return "sin votos registrados";
+            return messages.streakNoVotesYet();
         }
         if (nextVoteInMillis <= 0L) {
-            return "ahora";
+            return messages.streakCanVoteNow();
         }
-        return "en " + formatDuration(nextVoteInMillis);
+        return messages.streakCanVoteIn(formatDuration(nextVoteInMillis));
     }
 
     private String formatDuration(long millis) {
@@ -183,30 +188,25 @@ public class StreakCMD extends CSCommand {
         return "menos de un minuto";
     }
 
-    private String loadingMessage(String player) {
-        return "&eLos datos de racha de &6" + player + " &ese están cargando. Inténtalo de nuevo en unos segundos.";
-    }
-
-    private void resetAsync(CSPlugin plugin, CSCommandSender sender, VoteStreakService service, String player) {
+    private void resetAsync(CSPlugin plugin, CSCommandSender sender, VoteStreakService service, String player, PluginMessages messages) {
         plugin.getScheduler().runAsync(() -> {
             boolean reset = service.reset(player);
             plugin.runSenderIfActive(sender, resolved -> {
                 if (reset) {
-                    resolved.sendMessageWithTag("&aRacha de &e" + player + " &areiniciada correctamente.");
+                    resolved.sendMessageWithTag(messages.streakResetSuccess(player));
                 } else {
-                    resolved.sendMessageWithTag("&cNo se pudo reiniciar la racha de &e" + player + "&c.");
+                    resolved.sendMessageWithTag(messages.streakResetFailed(player));
                 }
             });
         });
     }
 
-    private void sendHelp(CSCommandSender sender) {
-        sender.sendMessageWithTag("&cUso: /streak40 view <jugador>");
-        sender.sendMessageWithTag("&cUso: /streak40 reset <jugador>");
+    private void sendHelp(CSCommandSender sender, PluginMessages messages) {
+        PluginMessages.sendLines(sender, messages.streakUsageLines());
     }
 
-    private void sendConsoleUsage(CSCommandSender sender) {
-        sender.sendMessageWithTag("&cUso: /streak40 view <jugador>");
+    private void sendConsoleUsage(CSCommandSender sender, PluginMessages messages) {
+        PluginMessages.sendLines(sender, Collections.singletonList(messages.streakUsageLines().get(0)));
     }
 
     private boolean isReadOperation(List<String> args) {
