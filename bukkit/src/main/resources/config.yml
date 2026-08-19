@@ -21,11 +21,91 @@ messages:
   # Prefix used by plugin messages.
   prefix: "&8[&b40ServidoresMC&8]"
 
-  # Sent when the player has voted and can claim the reward.
-  voteClaim: "&aThanks for voting! Run the command again to claim your reward."
+  # Sent after the player receives a vote reward.
+  voteClaim: "&aThanks for voting! Here is your reward."
 
   # Sent when the player already received today's reward.
   alreadyRewarded: "&aYou already voted and received your reward. You can vote again in &e%time%&a."
+
+  commands:
+    noPermission: "&cYou do not have permission to use this command."
+    onlyPlayer: "&cThis command can only be used by players."
+    unexpectedError: "&cAn unexpected error occurred."
+    cooldown: "&eYou can use &6/%command% &eagain in &6%time%&e."
+
+  apiException: "&cAn exception occurred. Contact an administrator."
+
+  vote:
+    checking: "&7Checking vote..."
+    notVotedToday: "&6You have not voted today! You can do it at &a "
+    alreadyClaimed: "&aThanks for voting, but you already received your reward!"
+    error: "&7An error occurred. Try again later or contact an administrator."
+    rewardSaveFailed: "&cCould not save your rewarded vote. Contact an administrator."
+
+  stats:
+    exception: "&cAn exception occurred. Check the console or contact an administrator."
+    lines:
+      - "&9==> &7%server% &eis ranked &a#%rank%"
+      - "&bVotes today: &6%votesToday%"
+      - "&bRewarded votes today: &6%rewardedToday%"
+      - "&bWeekly votes: &6%votesWeek%"
+      - "&bRewarded weekly votes: &6%rewardedWeek%"
+      - "&bLast 20 votes: %lastVotes%"
+
+  streak:
+    unavailable: "&cThe streak system is not available."
+    loading: "&eStreak data for &6%player% &eis loading. Try again in a few seconds."
+    own:
+      lines:
+        - "&9Your vote streak"
+        - "&bCurrent streak: &6%streak% days"
+        - "&bBest streak: &6%bestStreak% days"
+        - "&bLast vote: &6%lastVote%"
+        - "&bYou can vote again: &6%canVote%"
+        - "&aVote today to keep your streak!"
+    admin:
+      lines:
+        - "&9Streak for &e%player%&9:"
+        - "&bCurrent streak: &6%streak%"
+        - "&bBest streak: &6%bestStreak%"
+        - "&bLast vote day: &6%lastVote%"
+        - "&bUUID: &6%uuid%"
+        - "&bRewarded milestones: &6%milestones%"
+    usage:
+      lines:
+        - "&cUsage: /streak40 view <player>"
+        - "&cUsage: /streak40 reset <player>"
+    resetSuccess: "&aStreak for &e%player% &ahas been reset."
+    resetFailed: "&cCould not reset the streak for &e%player%&c."
+    formats:
+      none: "none"
+      today: "today"
+      yesterday: "yesterday"
+      daysAgo: "%days% days ago"
+      noVotesYet: "no votes recorded"
+      canVoteNow: "now"
+      canVoteIn: "in %time%"
+
+  metrics:
+    lines:
+      - "&9==> &7Internal metrics since last startup"
+      - "&bAPI requests: &6%apiRequests%"
+      - "&bAPI failures: &6%apiFailures%"
+      - "&bRetries: &6%retries%"
+      - "&bHTTP rejections: &6%httpRejections%"
+      - "&bVote checks: &6%voteChecks%"
+      - "&bRewards delivered: &6%rewardsDelivered%"
+
+  reload:
+    lines:
+      - "&aConfiguration reloaded successfully."
+      - "&aRunning version &f%version%"
+
+  test:
+    lines:
+      - "&b40ServidoresMC test platform:"
+      - ""
+      - "%voteClaim%"
 
 broadcast:
   # Announce vote rewards to all online players.
