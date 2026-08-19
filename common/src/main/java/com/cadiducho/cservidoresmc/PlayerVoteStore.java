@@ -135,6 +135,15 @@ public class PlayerVoteStore {
         return cached != null && rewardDate.equals(cached.lastRewardDate);
     }
 
+    public String cachedLastRewardDate(String playerName, String uuid) {
+        PlayerVoteData cached = cachedPlayer(playerName, uuid);
+        return cached == null ? "" : cached.lastRewardDate;
+    }
+
+    public String lastRewardDate(String playerName, String uuid) {
+        return load(playerName, uuid).lastRewardDate;
+    }
+
     public VoteStreakStore.Snapshot recordStreak(String playerName, String uuid, LocalDate voteDay) {
         UpdateResult result = update(playerName, uuid, player -> {
             if (!player.hasUuid()) {

@@ -21,7 +21,6 @@ import java.util.function.Supplier;
 public class RewardService {
 
     private static final List<String> DEFAULT_RECHECK_DELAYS = Arrays.asList("10", "30", "60");
-    private static final String DEFAULT_ALREADY_REWARDED_MESSAGE = "&aYa has votado y recibido tu recompensa. Podrás volver a votar en &e%time%&a.";
 
     private final CSPlugin plugin;
     private final PlayerVoteStore playerVoteStore;
@@ -59,7 +58,7 @@ public class RewardService {
         String playerName = reference.getName().isEmpty() ? player : reference.getName();
         String uuid = reference.getUniqueId();
         if (voteResponse == null || voteResponse.getStatus() == null) {
-            sendMessage(reference, "&7Ha ocurrido un error. Prueba más tarde o avisa a un adminsitrador");
+            sendMessage(reference, messages().voteError());
             return;
         }
 
@@ -71,23 +70,22 @@ public class RewardService {
                 if (sendAlreadyRewardedIfActive(sender)) {
                     return;
                 }
-                plugin.runSenderIfActive(sender, resolved -> resolved.sendNotVotedTodayLink("&6No has votado hoy! Puedes hacerlo en &a ", web));
+                plugin.runSenderIfActive(sender, resolved -> resolved.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), web));
                 scheduleAutoReward(playerName, reference);
                 break;
             case SUCCESS:
-                deliverReward(playerName, uuid, reference, true);
+                handleSuccessResponse(playerName, uuid, sender, reference);
                 break;
             case ALREADY_VOTED:
-                markRewarded(playerName, uuid);
                 recordVote(playerName, uuid);
                 invalidateVoteCaches(playerName);
-                sendMessage(reference, "&aGracias por votar, pero ya has obtenido tu premio!");
+                sendMessage(reference, messages().voteAlreadyClaimed());
                 break;
             case INVALID_kEY:
-                sendMessage(reference, "&cClave incorrecta. Entra en &bhttps://40servidoresmc.es/miservidor.php &cy cambia esta.");
+                sendMessage(reference, messages().invalidApiKey());
                 break;
             default:
-                sendMessage(reference, "&7Ha ocurrido un error. Prueba más tarde o avisa a un adminsitrador");
+                sendMessage(reference, messages().voteError());
                 break;
         }
     }
@@ -130,7 +128,7 @@ public class RewardService {
         String date = currentDate.get();
         PlayerVoteStore.MarkResult markResult = playerVoteStore.markRewarded(player, uuid, date, clock.get());
         if (markResult == PlayerVoteStore.MarkResult.FAILED) {
-            sendMessage(reference, "&cNo se pudo registrar tu voto premiado. Avisa a un administrador.");
+            sendMessage(reference, messages().rewardSaveFailed());
             return false;
         }
 
@@ -146,7 +144,7 @@ public class RewardService {
         recordVote(player, uuid);
         recordStreak(player, uuid);
         invalidateVoteCaches(player);
-        sendMessage(reference, plugin.getCSConfiguration().getString("messages.voteClaim", "mensaje", ""));
+        sendMessage(reference, messages().voteClaim());
 
         for (String command : plugin.getCSConfiguration().customCommandsList()) {
             String parsedCommand = PlayerPlaceholders.applyPlayer(command, player);
@@ -226,7 +224,6 @@ public class RewardService {
         }
 
         if (status == VoteStatus.ALREADY_VOTED) {
-            markRewarded(player, reference.getUniqueId());
             recordVote(player, reference.getUniqueId());
             invalidateVoteCaches(player);
             finishRechecks(pendingKey);
@@ -247,8 +244,80 @@ public class RewardService {
         }
     }
 
-    private void markRewarded(String player, String uuid) {
-        playerVoteStore.markRewarded(player, uuid, currentDate.get(), clock.get());
+    private void handleSuccessResponse(String playerName, String uuid, CSCommandSender sender, PlayerReference reference) {
+        if (!shouldConfirmSuccess(playerName, uuid)) {
+            deliverReward(playerName, uuid, reference, true);
+            return;
+        }
+
+        plugin.getApiClient().invalidateVoteCache(playerName);
+        plugin.getApiClient().validateVote(playerName).thenAccept(confirmed -> {
+            if (!plugin.isActive()) {
+                return;
+            }
+            plugin.runSenderIfActive(sender, resolved -> applyConfirmedSuccess(playerName, uuid, resolved, confirmed));
+        }).exceptionally(error -> {
+            debug("Revalidación de SUCCESS falló para " + playerName + ": " + error.getMessage());
+            if (plugin.isActive()) {
+                plugin.runSenderIfActive(sender, resolved ->
+                        deliverReward(playerName, uuid, PlayerReference.from(resolved), true));
+            }
+            return null;
+        });
+    }
+
+    private void applyConfirmedSuccess(String playerName, String uuid, CSCommandSender sender, VoteResponse confirmed) {
+        PlayerReference reference = PlayerReference.from(sender);
+        if (confirmed == null || confirmed.getStatus() == null) {
+            sendMessage(reference, messages().voteError());
+            return;
+        }
+
+        String web = confirmed.getWeb();
+        switch (confirmed.getStatus()) {
+            case NOT_VOTED:
+                if (sendAlreadyRewardedIfActive(sender)) {
+                    return;
+                }
+                sender.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), web);
+                scheduleAutoReward(playerName, reference);
+                break;
+            case SUCCESS:
+                deliverReward(playerName, uuid, reference, true);
+                break;
+            case ALREADY_VOTED:
+                recordVote(playerName, uuid);
+                invalidateVoteCaches(playerName);
+                sendMessage(reference, messages().voteAlreadyClaimed());
+                break;
+            default:
+                sendMessage(reference, messages().voteError());
+                break;
+        }
+    }
+
+    private boolean shouldConfirmSuccess(String player, String uuid) {
+        long lastVoteAt = playerVoteStore.cachedLastVoteAt(player, uuid);
+        if (lastVoteAt <= 0L) {
+            lastVoteAt = playerVoteStore.lastVoteAt(player, uuid);
+        }
+        if (lastVoteAt <= 0L) {
+            return false;
+        }
+
+        long nextVoteIn = cachedNextVoteInMillis(player, uuid);
+        if (nextVoteIn < 0L) {
+            nextVoteIn = nextVoteInMillis(player, uuid);
+        }
+        if (nextVoteIn > 0L) {
+            return false;
+        }
+
+        String lastRewardDate = playerVoteStore.cachedLastRewardDate(player, uuid);
+        if (lastRewardDate == null || lastRewardDate.isEmpty()) {
+            lastRewardDate = playerVoteStore.lastRewardDate(player, uuid);
+        }
+        return !lastRewardDate.isEmpty() && !currentDate.get().equals(lastRewardDate);
     }
 
     private void recordVote(String player, String uuid) {
@@ -317,13 +386,16 @@ public class RewardService {
     }
 
     private void sendAlreadyRewardedMessage(String player, String uuid, PlayerReference reference) {
-        String message = plugin.getCSConfiguration().getString("messages.alreadyRewarded", "alreadyRewardedMessage", DEFAULT_ALREADY_REWARDED_MESSAGE);
         long nextVoteIn = cachedNextVoteInMillis(player, uuid);
         if (nextVoteIn < 0L) {
             nextVoteIn = nextVoteInMillis(player, uuid);
         }
         long timeLeft = nextVoteIn;
-        sendMessage(reference, message.replace("%time%", VoteTimeFormatter.formatDuration(timeLeft)));
+        sendMessage(reference, messages().alreadyRewarded(VoteTimeFormatter.formatDuration(timeLeft)));
+    }
+
+    private PluginMessages messages() {
+        return plugin.getPluginMessages();
     }
 
     private String rewardKey(String player, String date) {
