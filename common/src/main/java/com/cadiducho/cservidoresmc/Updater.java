@@ -44,7 +44,6 @@ public class Updater {
     private final String releaseUrl;
     private final String updateUrl;
     private final Executor executor;
-    private final UpdateNoticeFormatter noticeFormatter = new UpdateNoticeFormatter();
     private final AtomicReference<UpdateCheckResult> cachedResult;
     private final AtomicReference<CompletableFuture<UpdateCheckResult>> inFlight = new AtomicReference<>();
 
@@ -105,7 +104,7 @@ public class Updater {
             }
 
             if (finalResult.isUpdateAvailable()) {
-                sendLines(finalSender, noticeFormatter.updateAvailable(finalResult));
+                sendLines(finalSender, noticeFormatter().updateAvailable(finalResult));
                 return;
             }
 
@@ -152,7 +151,7 @@ public class Updater {
         if (sender == null || result == null || !result.isUpdateAvailable()) {
             return false;
         }
-        sendLines(sender, noticeFormatter.updateAvailable(result));
+        sendLines(sender, noticeFormatter().updateAvailable(result));
         return true;
     }
 
@@ -169,7 +168,11 @@ public class Updater {
     }
 
     public UpdateNoticeFormatter getNoticeFormatter() {
-        return noticeFormatter;
+        return noticeFormatter();
+    }
+
+    private UpdateNoticeFormatter noticeFormatter() {
+        return new UpdateNoticeFormatter();
     }
 
     private CompletableFuture<UpdateCheckResult> queryUpdateStatus() {
@@ -234,11 +237,12 @@ public class Updater {
     }
 
     private void sendManualResult(CSCommandSender sender, UpdateCheckResult result) {
+        UpdateNoticeFormatter formatter = noticeFormatter();
         if (result.getStatus() == UpdateCheckStatus.ERROR) {
-            sendLines(sender, noticeFormatter.error(result));
+            sendLines(sender, formatter.error(result));
             return;
         }
-        sendLines(sender, noticeFormatter.upToDate(result));
+        sendLines(sender, formatter.upToDate(result));
     }
 
     private boolean notifyConsole() {
