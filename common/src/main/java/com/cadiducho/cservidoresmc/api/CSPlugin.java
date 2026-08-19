@@ -1,6 +1,7 @@
 package com.cadiducho.cservidoresmc.api;
 
 import com.cadiducho.cservidoresmc.ApiClient;
+import com.cadiducho.cservidoresmc.PluginMessages;
 import com.cadiducho.cservidoresmc.PluginMetrics;
 import com.cadiducho.cservidoresmc.PlayerVoteStore;
 import com.cadiducho.cservidoresmc.RewardService;
@@ -55,6 +56,10 @@ public interface CSPlugin {
      * @return config
      */
     CSConfiguration getCSConfiguration();
+
+    default PluginMessages getPluginMessages() {
+        return new PluginMessages(getCSConfiguration());
+    }
 
     /**
      * Obtener la versión de la configuración
