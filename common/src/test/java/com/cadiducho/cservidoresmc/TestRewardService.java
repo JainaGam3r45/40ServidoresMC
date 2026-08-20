@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -226,6 +227,69 @@ public class TestRewardService {
         rewardService.handleVoteResponse(sender.getName(), sender, vote("0"));
         assertTrue(sender.messages.stream().anyMatch(message -> message.contains("https://40servidoresmc.es")));
         assertEquals("2026-06-18", store.lastRewardDate("Cadiducho", PLAYER_UUID));
+    }
+
+    @Test
+    void alreadyVotedShowsAlreadyRewardedWithTime() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        AtomicLong clock = new AtomicLong(1_000L);
+        PlayerVoteStore store = new PlayerVoteStore(tempDir, plugin);
+        RewardService rewardService = new RewardService(plugin, store, plugin.scheduler, () -> "2026-06-18", clock::get);
+        plugin.setRewardService(rewardService);
+        plugin.setApiClient(new FakeApiClient(plugin));
+        TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
+
+        rewardService.handleVoteResponse(sender.getName(), sender, vote("2"));
+
+        assertTrue(sender.messages.stream().anyMatch(message ->
+                message.contains("Ya has votado y recibido tu recompensa")
+                        && message.contains(VoteTimeFormatter.formatDuration(VoteReminderService.VOTE_COOLDOWN_MILLIS))));
+        assertTrue(store.lastVoteAt("Cadiducho", PLAYER_UUID) > 0L);
+    }
+
+    @Test
+    void alreadyVotedDoesNotExtendActiveCooldown() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        AtomicLong clock = new AtomicLong(1_000L);
+        PlayerVoteStore store = new PlayerVoteStore(tempDir, plugin);
+        RewardService rewardService = new RewardService(plugin, store, plugin.scheduler, () -> "2026-06-18", clock::get);
+        plugin.setRewardService(rewardService);
+        plugin.setApiClient(new FakeApiClient(plugin));
+        TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
+
+        assertTrue(store.recordVote(sender.getName(), PLAYER_UUID, clock.get()));
+        long originalLastVoteAt = store.lastVoteAt("Cadiducho", PLAYER_UUID);
+        clock.addAndGet(TimeUnit.HOURS.toMillis(2));
+
+        rewardService.handleVoteResponse(sender.getName(), sender, vote("2"));
+
+        assertEquals(originalLastVoteAt, store.lastVoteAt("Cadiducho", PLAYER_UUID));
+        assertTrue(sender.messages.stream().anyMatch(message ->
+                message.contains("Ya has votado y recibido tu recompensa")
+                        && message.contains(VoteTimeFormatter.formatDuration(
+                        VoteReminderService.VOTE_COOLDOWN_MILLIS - TimeUnit.HOURS.toMillis(2)))));
+    }
+
+    @Test
+    void sendAlreadyRewardedIfActiveUsesVoteCooldownWithoutRewardDate() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        AtomicLong clock = new AtomicLong(1_000L);
+        PlayerVoteStore store = new PlayerVoteStore(tempDir, plugin);
+        RewardService rewardService = new RewardService(plugin, store, plugin.scheduler, () -> "2026-06-18", clock::get);
+        plugin.setRewardService(rewardService);
+        plugin.setApiClient(new FakeApiClient(plugin));
+        TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
+
+        rewardService.handleVoteResponse(sender.getName(), sender, vote("2"));
+        sender.messages.clear();
+
+        assertTrue(rewardService.sendAlreadyRewardedIfActive(sender));
+        assertTrue(sender.messages.stream().anyMatch(message ->
+                message.contains("Ya has votado y recibido tu recompensa")));
+        assertEquals("", store.lastRewardDate("Cadiducho", PLAYER_UUID));
     }
 
     private RewardService rewardService(TestPlugin plugin, TestScheduler scheduler) {
