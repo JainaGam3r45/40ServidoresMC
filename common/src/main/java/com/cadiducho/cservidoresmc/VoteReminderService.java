@@ -17,6 +17,10 @@ import java.util.function.Supplier;
 
 public class VoteReminderService {
 
+    /**
+     * Safe upper bound used by older tests when advancing clocks past eligibility.
+     * Real eligibility uses {@link VoteCooldownRules} (UTC day + 12h).
+     */
     static final long VOTE_COOLDOWN_MILLIS = TimeUnit.HOURS.toMillis(24);
     private static final int DEFAULT_CHECK_INTERVAL_SECONDS = 300;
     private static final int MIN_CHECK_INTERVAL_SECONDS = 60;
@@ -77,31 +81,19 @@ public class VoteReminderService {
     }
 
     public boolean canVote(String player) {
-        long lastVoteAt = lastVoteAt(player);
-        return lastVoteAt > 0L && nextVoteInMillis(player) <= 0L;
+        return VoteCooldownRules.canVoteAgain(lastVoteAt(player), clock.get());
     }
 
     public long nextVoteInMillis(String player) {
-        long lastVoteAt = lastVoteAt(player);
-        if (lastVoteAt <= 0L) {
-            return -1L;
-        }
-
-        return Math.max(0L, VOTE_COOLDOWN_MILLIS - (clock.get() - lastVoteAt));
+        return VoteCooldownRules.nextVoteInMillis(lastVoteAt(player), clock.get());
     }
 
     public long cachedNextVoteInMillis(String player, String uuid) {
-        long lastVoteAt = cachedLastVoteAt(player, uuid);
-        if (lastVoteAt <= 0L) {
-            return -1L;
-        }
-
-        return Math.max(0L, VOTE_COOLDOWN_MILLIS - (clock.get() - lastVoteAt));
+        return VoteCooldownRules.nextVoteInMillis(cachedLastVoteAt(player, uuid), clock.get());
     }
 
     public boolean cachedCanVote(String player, String uuid) {
-        long lastVoteAt = cachedLastVoteAt(player, uuid);
-        return lastVoteAt > 0L && cachedNextVoteInMillis(player, uuid) <= 0L;
+        return VoteCooldownRules.canVoteAgain(cachedLastVoteAt(player, uuid), clock.get());
     }
 
     public void requestLoad(String player, String uuid) {
@@ -155,7 +147,7 @@ public class VoteReminderService {
         }
 
         long now = clock.get();
-        if (now - lastVoteAt < VOTE_COOLDOWN_MILLIS) {
+        if (VoteCooldownRules.nextVoteInMillis(lastVoteAt, now) > 0L) {
             return;
         }
 

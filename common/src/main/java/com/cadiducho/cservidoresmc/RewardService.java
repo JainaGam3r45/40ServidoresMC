@@ -8,9 +8,7 @@ import com.cadiducho.cservidoresmc.scheduler.CSScheduler;
 import com.cadiducho.cservidoresmc.scheduler.PlayerReference;
 
 import java.io.File;
-import java.text.SimpleDateFormat;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -33,7 +31,7 @@ public class RewardService {
         this(plugin,
                 playerVoteStore(plugin),
                 plugin.getScheduler(),
-                () -> new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(new Date()),
+                () -> VoteCooldownRules.utcDateString(System.currentTimeMillis()),
                 System::currentTimeMillis);
     }
 
@@ -64,10 +62,15 @@ public class RewardService {
 
         String web = voteResponse.getWeb();
         VoteStatus status = voteResponse.getStatus();
+        debugApiResponse(playerName, voteResponse);
 
         switch (status) {
             case NOT_VOTED:
                 if (sendAlreadyRewardedIfRewardedToday(sender)) {
+                    return;
+                }
+                if (isAlreadyRewardedByApi(voteResponse)) {
+                    handleAlreadyVoted(playerName, uuid, reference);
                     return;
                 }
                 plugin.runSenderIfActive(sender, resolved -> resolved.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), web));
@@ -280,9 +283,14 @@ public class RewardService {
         }
 
         String web = confirmed.getWeb();
+        debugApiResponse(playerName, confirmed);
         switch (confirmed.getStatus()) {
             case NOT_VOTED:
                 if (sendAlreadyRewardedIfRewardedToday(sender)) {
+                    return;
+                }
+                if (isAlreadyRewardedByApi(confirmed)) {
+                    handleAlreadyVoted(playerName, uuid, reference);
                     return;
                 }
                 sender.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), web);
@@ -303,6 +311,23 @@ public class RewardService {
     private void handleAlreadyVoted(String playerName, String uuid, PlayerReference reference) {
         invalidateVoteCaches(playerName);
         sendAlreadyRewardedMessage(playerName, uuid, reference);
+    }
+
+    private boolean isAlreadyRewardedByApi(VoteResponse voteResponse) {
+        String mensaje = voteResponse == null ? null : voteResponse.getMensaje();
+        if (mensaje == null || mensaje.trim().isEmpty()) {
+            return false;
+        }
+        return mensaje.toLowerCase(Locale.ROOT).contains("ya recompensado");
+    }
+
+    private void debugApiResponse(String playerName, VoteResponse voteResponse) {
+        if (voteResponse == null) {
+            return;
+        }
+        debug("API voto para " + playerName + ": status=" + voteResponse.getStatus()
+                + ", tipovoto=" + voteResponse.getTipovoto()
+                + ", mensaje=" + voteResponse.getMensaje());
     }
 
     private boolean shouldConfirmSuccess(String player, String uuid) {
@@ -373,27 +398,15 @@ public class RewardService {
     }
 
     private long nextVoteInMillis(CSCommandSender sender) {
-        long lastVoteAt = playerVoteStore.lastVoteAt(sender);
-        if (lastVoteAt <= 0L) {
-            return -1L;
-        }
-        return Math.max(0L, VoteReminderService.VOTE_COOLDOWN_MILLIS - (clock.get() - lastVoteAt));
+        return VoteCooldownRules.nextVoteInMillis(playerVoteStore.lastVoteAt(sender), clock.get());
     }
 
     private long nextVoteInMillis(String player, String uuid) {
-        long lastVoteAt = playerVoteStore.lastVoteAt(player, uuid);
-        if (lastVoteAt <= 0L) {
-            return -1L;
-        }
-        return Math.max(0L, VoteReminderService.VOTE_COOLDOWN_MILLIS - (clock.get() - lastVoteAt));
+        return VoteCooldownRules.nextVoteInMillis(playerVoteStore.lastVoteAt(player, uuid), clock.get());
     }
 
     private long cachedNextVoteInMillis(String player, String uuid) {
-        long lastVoteAt = playerVoteStore.cachedLastVoteAt(player, uuid);
-        if (lastVoteAt <= 0L) {
-            return -1L;
-        }
-        return Math.max(0L, VoteReminderService.VOTE_COOLDOWN_MILLIS - (clock.get() - lastVoteAt));
+        return VoteCooldownRules.nextVoteInMillis(playerVoteStore.cachedLastVoteAt(player, uuid), clock.get());
     }
 
     private void sendAlreadyRewardedMessage(String player, String uuid, PlayerReference reference) {
