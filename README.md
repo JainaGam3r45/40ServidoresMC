@@ -23,7 +23,7 @@ Claves principales:
 | `messages.alreadyRewarded` | Mensaje cuando el jugador ya recibió la recompensa. Usa `%time%`. |
 | `messages.commands.*` | Errores genéricos de comandos (`noPermission`, `onlyPlayer`, `unexpectedError`, `cooldown`). |
 | `messages.apiException` | Error genérico de la API en voto y estadísticas. |
-| `messages.vote.*` | Mensajes del flujo de voto (`checking`, `notVotedToday`, `alreadyClaimed`, `error`, `rewardSaveFailed`). |
+| `messages.vote.*` | Mensajes del flujo de voto (`checking`, `notVotedToday`, `error`, `rewardSaveFailed`). |
 | `messages.stats.lines` | Lista de líneas de `/stats40`. Placeholders: `%server%`, `%rank%`, `%votesToday%`, `%rewardedToday%`, `%votesWeek%`, `%rewardedWeek%`, `%lastVotes%`. |
 | `messages.streak.own.lines` / `admin.lines` / `usage.lines` | Listas de líneas de `/streak40`. |
 | `messages.streak.formats.*` | Textos para fechas y disponibilidad de voto en rachas. |
