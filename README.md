@@ -45,7 +45,7 @@ La web de 40ServidoresMC permite un nuevo voto cuando se cumplen **las dos** con
 
 El plugin usa esa misma regla para el tiempo de `%time%` en `messages.alreadyRewarded`, recordatorios y placeholders de disponibilidad. Ya no asume una ventana fija de 24 horas.
 
-La API `api2.php` puede devolver, además de `status` y `web`, los campos `mensaje` y `tipovoto`. Un `status: 0` no siempre significa “no has votado”: si el `mensaje` indica que el voto ya fue recompensado, el plugin trata el caso como ya reclamado y no muestra el enlace de voto.
+La API `api2.php` puede devolver, además de `status` y `web`, los campos `mensaje` y `tipovoto`. Un `status: 0` no siempre significa “no has votado”: si el `mensaje` indica que el voto ya fue recompensado, el plugin lo trata como reclamado. Si además no hay cooldown local activo (regla UTC + 12h), se muestra el enlace de voto en lugar del mensaje “ya votaste… en 0s”, para no bloquear cuentas sin ciclo local.
 
 Las claves antiguas como `clave`, `mensaje`, `tag` y `comandosCustom` siguen funcionando como fallback, pero el migrador las moverá a la estructura nueva para evitar confusión. Si falta una clave nueva de `messages.*`, el plugin usa el texto en español embebido en el código como respaldo. Las configs v9 con claves por línea (`messages.metrics.header`, etc.) se convierten automáticamente a listas si falta `messages.*.lines`.
 

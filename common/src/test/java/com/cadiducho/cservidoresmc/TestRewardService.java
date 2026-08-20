@@ -230,7 +230,7 @@ public class TestRewardService {
     }
 
     @Test
-    void alreadyVotedShowsAlreadyRewardedWithoutPoisoningLastVoteAt() {
+    void alreadyVotedWithoutLocalCooldownShowsVoteLink() {
         TestPlugin plugin = new TestPlugin(tempDir);
         AtomicLong clock = new AtomicLong(1_000L);
         PlayerVoteStore store = new PlayerVoteStore(tempDir, plugin);
@@ -240,11 +240,12 @@ public class TestRewardService {
         TestSender sender = new TestSender("Cadiducho");
         plugin.scheduler.connect(sender);
 
-        rewardService.handleVoteResponse(sender.getName(), sender, vote("2"));
+        rewardService.handleVoteResponse(sender.getName(), sender,
+                vote("2", "FALLO. Votos ya recompensados.", "Varios votos"));
 
-        assertTrue(sender.messages.stream().anyMatch(message ->
-                message.contains("Ya has votado y recibido tu recompensa")
-                        && message.contains(VoteTimeFormatter.formatDuration(0L))));
+        assertTrue(sender.messages.stream().anyMatch(message -> message.contains("https://40servidoresmc.es")));
+        assertFalse(sender.messages.stream().anyMatch(message ->
+                message.contains("Ya has votado y recibido tu recompensa")));
         assertEquals(0L, store.lastVoteAt("Cadiducho", PLAYER_UUID));
     }
 
@@ -270,6 +271,7 @@ public class TestRewardService {
                 message.contains("Ya has votado y recibido tu recompensa")
                         && message.contains(VoteTimeFormatter.formatDuration(
                         VoteCooldownRules.nextVoteInMillis(originalLastVoteAt, clock.get())))));
+        assertFalse(sender.messages.stream().anyMatch(message -> message.contains("https://40servidoresmc.es")));
     }
 
     @Test
@@ -312,7 +314,7 @@ public class TestRewardService {
     }
 
     @Test
-    void statusZeroAlreadyRewardedMessageDoesNotShowVoteLink() {
+    void statusZeroAlreadyRewardedWithoutLocalCooldownShowsLink() {
         TestPlugin plugin = new TestPlugin(tempDir);
         RewardService rewardService = rewardService(plugin, plugin.scheduler);
         plugin.setRewardService(rewardService);
@@ -322,8 +324,8 @@ public class TestRewardService {
 
         rewardService.handleVoteResponse(sender.getName(), sender, vote("0", "Voto Diario ya recompensado.", "Voto único"));
 
-        assertFalse(sender.messages.stream().anyMatch(message -> message.contains("https://40servidoresmc.es")));
-        assertTrue(sender.messages.stream().anyMatch(message ->
+        assertTrue(sender.messages.stream().anyMatch(message -> message.contains("https://40servidoresmc.es")));
+        assertFalse(sender.messages.stream().anyMatch(message ->
                 message.contains("Ya has votado y recibido tu recompensa")));
     }
 

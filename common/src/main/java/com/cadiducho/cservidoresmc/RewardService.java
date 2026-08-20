@@ -70,7 +70,7 @@ public class RewardService {
                     return;
                 }
                 if (isAlreadyRewardedByApi(voteResponse)) {
-                    handleAlreadyVoted(playerName, uuid, reference);
+                    handleAlreadyVoted(playerName, uuid, reference, web);
                     return;
                 }
                 plugin.runSenderIfActive(sender, resolved -> resolved.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), web));
@@ -80,7 +80,7 @@ public class RewardService {
                 handleSuccessResponse(playerName, uuid, sender, reference);
                 break;
             case ALREADY_VOTED:
-                handleAlreadyVoted(playerName, uuid, reference);
+                handleAlreadyVoted(playerName, uuid, reference, web);
                 break;
             case INVALID_kEY:
                 sendMessage(reference, messages().invalidApiKey());
@@ -290,7 +290,7 @@ public class RewardService {
                     return;
                 }
                 if (isAlreadyRewardedByApi(confirmed)) {
-                    handleAlreadyVoted(playerName, uuid, reference);
+                    handleAlreadyVoted(playerName, uuid, reference, web);
                     return;
                 }
                 sender.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), web);
@@ -300,7 +300,7 @@ public class RewardService {
                 deliverReward(playerName, uuid, reference, true);
                 break;
             case ALREADY_VOTED:
-                handleAlreadyVoted(playerName, uuid, reference);
+                handleAlreadyVoted(playerName, uuid, reference, web);
                 break;
             default:
                 sendMessage(reference, messages().voteError());
@@ -308,9 +308,24 @@ public class RewardService {
         }
     }
 
-    private void handleAlreadyVoted(String playerName, String uuid, PlayerReference reference) {
+    private void handleAlreadyVoted(String playerName, String uuid, PlayerReference reference, String web) {
         invalidateVoteCaches(playerName);
-        sendAlreadyRewardedMessage(playerName, uuid, reference);
+        long nextVoteIn = cachedNextVoteInMillis(playerName, uuid);
+        if (nextVoteIn < 0L) {
+            nextVoteIn = nextVoteInMillis(playerName, uuid);
+        }
+        if (nextVoteIn > 0L) {
+            sendAlreadyRewardedMessage(playerName, uuid, reference);
+            return;
+        }
+
+        // API says already rewarded, but the local UTC+12h window allows a new vote cycle.
+        // Show the vote link instead of "already voted in 0s".
+        debug("API ya recompensado sin cooldown local para " + playerName + "; mostrando enlace de voto.");
+        final String voteUrl = web == null ? "" : web;
+        plugin.runPlayerIfActive(reference, sender ->
+                sender.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), voteUrl));
+        scheduleAutoReward(playerName, reference);
     }
 
     private boolean isAlreadyRewardedByApi(VoteResponse voteResponse) {
