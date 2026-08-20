@@ -38,7 +38,6 @@ messages:
   vote:
     checking: "&7Checking vote..."
     notVotedToday: "&6You have not voted today! You can do it at &a "
-    alreadyClaimed: "&aThanks for voting, but you already received your reward!"
     error: "&7An error occurred. Try again later or contact an administrator."
     rewardSaveFailed: "&cCould not save your rewarded vote. Contact an administrator."
 

@@ -67,7 +67,7 @@ public class RewardService {
 
         switch (status) {
             case NOT_VOTED:
-                if (sendAlreadyRewardedIfActive(sender)) {
+                if (sendAlreadyRewardedIfRewardedToday(sender)) {
                     return;
                 }
                 plugin.runSenderIfActive(sender, resolved -> resolved.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), web));
@@ -77,9 +77,7 @@ public class RewardService {
                 handleSuccessResponse(playerName, uuid, sender, reference);
                 break;
             case ALREADY_VOTED:
-                recordVote(playerName, uuid);
-                invalidateVoteCaches(playerName);
-                sendMessage(reference, messages().voteAlreadyClaimed());
+                handleAlreadyVoted(playerName, uuid, reference);
                 break;
             case INVALID_kEY:
                 sendMessage(reference, messages().invalidApiKey());
@@ -114,6 +112,14 @@ public class RewardService {
     }
 
     public boolean sendAlreadyRewardedIfActive(CSCommandSender sender) {
+        if (cachedNextVoteInMillis(sender.getName(), sender.getUniqueId()) <= 0L) {
+            return false;
+        }
+        sendAlreadyRewardedMessage(sender.getName(), sender.getUniqueId(), PlayerReference.from(sender));
+        return true;
+    }
+
+    private boolean sendAlreadyRewardedIfRewardedToday(CSCommandSender sender) {
         if (!hasCachedActiveReward(sender.getName(), sender.getUniqueId())) {
             return false;
         }
@@ -276,7 +282,7 @@ public class RewardService {
         String web = confirmed.getWeb();
         switch (confirmed.getStatus()) {
             case NOT_VOTED:
-                if (sendAlreadyRewardedIfActive(sender)) {
+                if (sendAlreadyRewardedIfRewardedToday(sender)) {
                     return;
                 }
                 sender.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), web);
@@ -286,14 +292,24 @@ public class RewardService {
                 deliverReward(playerName, uuid, reference, true);
                 break;
             case ALREADY_VOTED:
-                recordVote(playerName, uuid);
-                invalidateVoteCaches(playerName);
-                sendMessage(reference, messages().voteAlreadyClaimed());
+                handleAlreadyVoted(playerName, uuid, reference);
                 break;
             default:
                 sendMessage(reference, messages().voteError());
                 break;
         }
+    }
+
+    private void handleAlreadyVoted(String playerName, String uuid, PlayerReference reference) {
+        long nextVoteIn = cachedNextVoteInMillis(playerName, uuid);
+        if (nextVoteIn < 0L) {
+            nextVoteIn = nextVoteInMillis(playerName, uuid);
+        }
+        if (nextVoteIn <= 0L) {
+            recordVote(playerName, uuid);
+        }
+        invalidateVoteCaches(playerName);
+        sendAlreadyRewardedMessage(playerName, uuid, reference);
     }
 
     private boolean shouldConfirmSuccess(String player, String uuid) {
@@ -321,9 +337,11 @@ public class RewardService {
     }
 
     private void recordVote(String player, String uuid) {
+        long votedAt = clock.get();
+        playerVoteStore.recordVote(player, uuid, votedAt);
         VoteReminderService voteReminderService = plugin.getVoteReminderService();
         if (voteReminderService != null) {
-            voteReminderService.recordVote(player, uuid);
+            voteReminderService.recordVote(player, uuid, votedAt);
         }
     }
 
