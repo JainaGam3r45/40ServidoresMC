@@ -23,7 +23,7 @@ public class TestVoteReminderService {
     File tempDir;
 
     @Test
-    void remindsAfterTwentyFourHours() {
+    void remindsAfterEligibilityWindow() {
         AtomicLong clock = new AtomicLong(1_000L);
         TestPlugin plugin = new TestPlugin(tempDir);
         TestScheduler scheduler = plugin.scheduler;
@@ -33,14 +33,14 @@ public class TestVoteReminderService {
         plugin.onlinePlayers.add(sender);
 
         service.recordVote(sender.getName(), clock.get());
-        clock.addAndGet(VoteReminderService.VOTE_COOLDOWN_MILLIS);
+        clock.set(VoteCooldownRules.nextEligibleAtMillis(1_000L));
         service.checkReminders();
 
         assertEquals(Collections.singletonList("&8[&b40ServidoresMC&8] &aYa puedes volver a votar."), sender.messages);
     }
 
     @Test
-    void doesNotRemindBeforeTwentyFourHours() {
+    void doesNotRemindBeforeEligibilityWindow() {
         AtomicLong clock = new AtomicLong(1_000L);
         TestPlugin plugin = new TestPlugin(tempDir);
         VoteReminderService service = reminderService(plugin, plugin.scheduler, clock);
@@ -49,7 +49,8 @@ public class TestVoteReminderService {
         plugin.onlinePlayers.add(sender);
 
         service.recordVote(sender.getName(), clock.get());
-        clock.addAndGet(VoteReminderService.VOTE_COOLDOWN_MILLIS - 1L);
+        long remaining = VoteCooldownRules.nextVoteInMillis(1_000L, clock.get());
+        clock.addAndGet(Math.max(0L, remaining - 1L));
         service.checkReminders();
 
         assertEquals(1L, service.nextVoteInMillis(sender.getName()));
@@ -64,7 +65,7 @@ public class TestVoteReminderService {
         VoteReminderService service = reminderService(plugin, plugin.scheduler, clock);
 
         service.recordVote("Cadiducho", clock.get());
-        clock.addAndGet(VoteReminderService.VOTE_COOLDOWN_MILLIS);
+        clock.set(VoteCooldownRules.nextEligibleAtMillis(1_000L));
 
         assertEquals(1_000L, service.lastVoteAt("cadiducho"));
         assertEquals(0L, service.nextVoteInMillis("Cadiducho"));
@@ -82,7 +83,7 @@ public class TestVoteReminderService {
         plugin.onlinePlayers.add(sender);
 
         service.recordVote(sender.getName(), clock.get());
-        clock.addAndGet(VoteReminderService.VOTE_COOLDOWN_MILLIS);
+        clock.set(VoteCooldownRules.nextEligibleAtMillis(1_000L));
         service.checkReminders();
         service.checkReminders();
 
@@ -99,11 +100,11 @@ public class TestVoteReminderService {
         plugin.onlinePlayers.add(sender);
 
         service.recordVote(sender.getName(), clock.get());
-        clock.addAndGet(VoteReminderService.VOTE_COOLDOWN_MILLIS);
+        clock.set(VoteCooldownRules.nextEligibleAtMillis(1_000L));
         service.checkReminders();
-        clock.addAndGet(10_000L);
-        service.recordVote(sender.getName(), clock.get());
-        clock.addAndGet(VoteReminderService.VOTE_COOLDOWN_MILLIS);
+        long secondVoteAt = clock.addAndGet(10_000L);
+        service.recordVote(sender.getName(), secondVoteAt);
+        clock.set(VoteCooldownRules.nextEligibleAtMillis(secondVoteAt));
         service.checkReminders();
 
         assertEquals(2, sender.messages.size());
@@ -122,7 +123,7 @@ public class TestVoteReminderService {
 
         service.start();
         service.recordVote(sender.getName(), clock.get());
-        clock.addAndGet(VoteReminderService.VOTE_COOLDOWN_MILLIS);
+        clock.set(VoteCooldownRules.nextEligibleAtMillis(1_000L));
         service.checkReminders();
 
         assertFalse(scheduler.hasDelayedTasks());
@@ -152,7 +153,7 @@ public class TestVoteReminderService {
         plugin.onlinePlayers.add(sender);
 
         service.recordVote(sender.getName(), sender.getUniqueId(), clock.get());
-        clock.addAndGet(VoteReminderService.VOTE_COOLDOWN_MILLIS);
+        clock.set(VoteCooldownRules.nextEligibleAtMillis(1_000L));
         service.checkReminders();
 
         assertEquals(0, plugin.resolveCalls);

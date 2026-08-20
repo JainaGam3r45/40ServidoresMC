@@ -269,7 +269,7 @@ public class TestRewardService {
         assertTrue(sender.messages.stream().anyMatch(message ->
                 message.contains("Ya has votado y recibido tu recompensa")
                         && message.contains(VoteTimeFormatter.formatDuration(
-                        VoteReminderService.VOTE_COOLDOWN_MILLIS - TimeUnit.HOURS.toMillis(2)))));
+                        VoteCooldownRules.nextVoteInMillis(originalLastVoteAt, clock.get())))));
     }
 
     @Test
@@ -311,12 +311,55 @@ public class TestRewardService {
                 message.contains("Ya has votado y recibido tu recompensa")));
     }
 
+    @Test
+    void statusZeroAlreadyRewardedMessageDoesNotShowVoteLink() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        RewardService rewardService = rewardService(plugin, plugin.scheduler);
+        plugin.setRewardService(rewardService);
+        plugin.setApiClient(new FakeApiClient(plugin));
+        TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
+
+        rewardService.handleVoteResponse(sender.getName(), sender, vote("0", "Voto Diario ya recompensado.", "Voto único"));
+
+        assertFalse(sender.messages.stream().anyMatch(message -> message.contains("https://40servidoresmc.es")));
+        assertTrue(sender.messages.stream().anyMatch(message ->
+                message.contains("Ya has votado y recibido tu recompensa")));
+    }
+
+    @Test
+    void statusZeroWithoutPendingVoteShowsLink() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        RewardService rewardService = rewardService(plugin, plugin.scheduler);
+        plugin.setRewardService(rewardService);
+        plugin.setApiClient(new FakeApiClient(plugin));
+        TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
+
+        rewardService.handleVoteResponse(sender.getName(), sender,
+                vote("0", "FALLO. No hay voto que recompensar.", "Voto único"));
+
+        assertTrue(sender.messages.stream().anyMatch(message -> message.contains("https://40servidoresmc.es")));
+    }
+
     private RewardService rewardService(TestPlugin plugin, TestScheduler scheduler) {
         return new RewardService(plugin, new File(tempDir, "rewarded-votes.properties"), scheduler, () -> "2026-06-18");
     }
 
     private VoteResponse vote(String status) {
-        return new Gson().fromJson("{\"web\":\"https://40servidoresmc.es\",\"status\":\"" + status + "\"}", VoteResponse.class);
+        return vote(status, null, null);
+    }
+
+    private VoteResponse vote(String status, String mensaje, String tipovoto) {
+        StringBuilder json = new StringBuilder("{\"web\":\"https://40servidoresmc.es\",\"status\":\"").append(status).append("\"");
+        if (mensaje != null) {
+            json.append(",\"mensaje\":\"").append(mensaje).append("\"");
+        }
+        if (tipovoto != null) {
+            json.append(",\"tipovoto\":\"").append(tipovoto).append("\"");
+        }
+        json.append("}");
+        return new Gson().fromJson(json.toString(), VoteResponse.class);
     }
 
     private static class FakeApiClient extends ApiClient {
