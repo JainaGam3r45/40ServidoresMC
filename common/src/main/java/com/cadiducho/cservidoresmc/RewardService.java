@@ -112,7 +112,7 @@ public class RewardService {
     }
 
     public boolean sendAlreadyRewardedIfActive(CSCommandSender sender) {
-        if (cachedNextVoteInMillis(sender.getName(), sender.getUniqueId()) <= 0L) {
+        if (!hasCachedActiveReward(sender.getName(), sender.getUniqueId())) {
             return false;
         }
         sendAlreadyRewardedMessage(sender.getName(), sender.getUniqueId(), PlayerReference.from(sender));
@@ -301,13 +301,6 @@ public class RewardService {
     }
 
     private void handleAlreadyVoted(String playerName, String uuid, PlayerReference reference) {
-        long nextVoteIn = cachedNextVoteInMillis(playerName, uuid);
-        if (nextVoteIn < 0L) {
-            nextVoteIn = nextVoteInMillis(playerName, uuid);
-        }
-        if (nextVoteIn <= 0L) {
-            recordVote(playerName, uuid);
-        }
         invalidateVoteCaches(playerName);
         sendAlreadyRewardedMessage(playerName, uuid, reference);
     }
@@ -408,7 +401,7 @@ public class RewardService {
         if (nextVoteIn < 0L) {
             nextVoteIn = nextVoteInMillis(player, uuid);
         }
-        long timeLeft = nextVoteIn;
+        long timeLeft = Math.max(0L, nextVoteIn);
         sendMessage(reference, messages().alreadyRewarded(VoteTimeFormatter.formatDuration(timeLeft)));
     }
 

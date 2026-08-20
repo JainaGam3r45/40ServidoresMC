@@ -230,7 +230,7 @@ public class TestRewardService {
     }
 
     @Test
-    void alreadyVotedShowsAlreadyRewardedWithTime() {
+    void alreadyVotedShowsAlreadyRewardedWithoutPoisoningLastVoteAt() {
         TestPlugin plugin = new TestPlugin(tempDir);
         AtomicLong clock = new AtomicLong(1_000L);
         PlayerVoteStore store = new PlayerVoteStore(tempDir, plugin);
@@ -244,8 +244,8 @@ public class TestRewardService {
 
         assertTrue(sender.messages.stream().anyMatch(message ->
                 message.contains("Ya has votado y recibido tu recompensa")
-                        && message.contains(VoteTimeFormatter.formatDuration(VoteReminderService.VOTE_COOLDOWN_MILLIS))));
-        assertTrue(store.lastVoteAt("Cadiducho", PLAYER_UUID) > 0L);
+                        && message.contains(VoteTimeFormatter.formatDuration(0L))));
+        assertEquals(0L, store.lastVoteAt("Cadiducho", PLAYER_UUID));
     }
 
     @Test
@@ -273,7 +273,7 @@ public class TestRewardService {
     }
 
     @Test
-    void sendAlreadyRewardedIfActiveUsesVoteCooldownWithoutRewardDate() {
+    void alreadyVotedWithoutLocalRewardDoesNotEarlyExit() {
         TestPlugin plugin = new TestPlugin(tempDir);
         AtomicLong clock = new AtomicLong(1_000L);
         PlayerVoteStore store = new PlayerVoteStore(tempDir, plugin);
@@ -286,10 +286,29 @@ public class TestRewardService {
         rewardService.handleVoteResponse(sender.getName(), sender, vote("2"));
         sender.messages.clear();
 
+        assertFalse(rewardService.sendAlreadyRewardedIfActive(sender));
+        assertTrue(sender.messages.isEmpty());
+        assertEquals("", store.lastRewardDate("Cadiducho", PLAYER_UUID));
+        assertEquals(0L, store.lastVoteAt("Cadiducho", PLAYER_UUID));
+    }
+
+    @Test
+    void sendAlreadyRewardedIfActiveRequiresLocalRewardToday() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        AtomicLong clock = new AtomicLong(1_000L);
+        PlayerVoteStore store = new PlayerVoteStore(tempDir, plugin);
+        RewardService rewardService = new RewardService(plugin, store, plugin.scheduler, () -> "2026-06-18", clock::get);
+        plugin.setRewardService(rewardService);
+        plugin.setApiClient(new FakeApiClient(plugin));
+        TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
+
+        rewardService.deliverReward(sender, true);
+        sender.messages.clear();
+
         assertTrue(rewardService.sendAlreadyRewardedIfActive(sender));
         assertTrue(sender.messages.stream().anyMatch(message ->
                 message.contains("Ya has votado y recibido tu recompensa")));
-        assertEquals("", store.lastRewardDate("Cadiducho", PLAYER_UUID));
     }
 
     private RewardService rewardService(TestPlugin plugin, TestScheduler scheduler) {
