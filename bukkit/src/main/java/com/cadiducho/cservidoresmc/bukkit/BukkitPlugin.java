@@ -15,6 +15,7 @@ import com.cadiducho.cservidoresmc.api.CSPlugin;
 import com.cadiducho.cservidoresmc.cmd.CSCommandManager;
 import com.cadiducho.cservidoresmc.config.CSConfiguration;
 import com.cadiducho.cservidoresmc.scheduler.CSScheduler;
+import com.cadiducho.cservidoresmc.scheduler.PlayerReference;
 import com.google.gson.Gson;
 import lombok.Getter;
 import org.bstats.bukkit.Metrics;
@@ -71,6 +72,9 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
 
         asyncExecutor = new BoundedTaskExecutor("40servidoresmc-http", pluginMetrics, this::logError);
         scheduler = new BukkitSchedulerAdapter(this, asyncExecutor);
+        if (scheduler.isUsingFoliaSchedulers()) {
+            log("Folia detectado: usando GlobalRegionScheduler y EntityScheduler.");
+        }
         apiClient = new ApiClient(instance, new Gson(), asyncExecutor);
         voteReminderService = new VoteReminderService(instance);
         voteStreakService = new VoteStreakService(instance);
@@ -210,6 +214,16 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
     }
 
     @Override
+    public String getServerPlatform() {
+        return FoliaDetector.isFoliaServer() ? "Folia" : "Bukkit";
+    }
+
+    @Override
+    public String getServerVersion() {
+        return getServer().getBukkitVersion().split("-")[0];
+    }
+
+    @Override
     public void dispatchCommand(String command) {
         getScheduler().runGlobal(() -> getServer().dispatchCommand(getServer().getConsoleSender(), command));
     }
@@ -252,9 +266,11 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
 
     @Override
     public void broadcastMessage(String message) {
-        getScheduler().runGlobal(() -> {
-            getServer().getOnlinePlayers().forEach(p -> p.sendMessage(ChatColor.translateAlternateColorCodes('&', message)));
-        });
+        String colored = ChatColor.translateAlternateColorCodes('&', message);
+        for (Player player : getServer().getOnlinePlayers()) {
+            PlayerReference reference = PlayerReference.of(player.getName(), player.getUniqueId().toString());
+            getScheduler().runPlayer(reference, sender -> sender.sendMessage(colored));
+        }
     }
 
 }

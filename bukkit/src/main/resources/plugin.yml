@@ -3,6 +3,7 @@ main: com.cadiducho.cservidoresmc.bukkit.BukkitPlugin
 version: 3.3.0
 author: Cadiducho
 api-version: 1.13
+folia-supported: true
 description: Enlace para servidores de la web 40ServidoresMC!
 softdepend: [PlaceholderAPI]
 commands:
