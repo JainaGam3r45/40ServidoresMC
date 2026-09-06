@@ -15,11 +15,29 @@ public class HttpRequester {
 
     private static final long MAX_RETRY_BACKOFF_MILLIS = 5000L;
 
+    private final CircuitBreaker circuitBreaker;
+
+    public HttpRequester() {
+        this(CircuitBreaker.defaults());
+    }
+
+    public HttpRequester(CircuitBreaker circuitBreaker) {
+        this.circuitBreaker = circuitBreaker == null ? CircuitBreaker.defaults() : circuitBreaker;
+    }
+
+    public CircuitBreaker getCircuitBreaker() {
+        return circuitBreaker;
+    }
+
     public String get(URL url, String requestName, HttpConfig config, HttpLogger logger) throws IOException {
         return request(url, "GET", requestName, config, logger);
     }
 
     public String request(URL url, String method, String requestName, HttpConfig config, HttpLogger logger) throws IOException {
+        if (!circuitBreaker.canExecute()) {
+            throw new CircuitBreaker.CircuitOpenException(circuitBreaker.backoffRemainingMs());
+        }
+
         IOException lastFailure = null;
         int maxAttempts = config.getRetries() + 1;
 
@@ -31,6 +49,7 @@ public class HttpRequester {
                 String body = readResponseBody(connection, statusCode);
 
                 if (isSuccess(statusCode)) {
+                    circuitBreaker.recordSuccess();
                     logger.debug(requestName + " completado con HTTP " + statusCode + " en intento " + attempt + ".");
                     return body;
                 }
@@ -42,6 +61,9 @@ public class HttpRequester {
                 );
 
                 if (!isRetryableStatus(statusCode) || attempt == maxAttempts) {
+                    if (isRetryableStatus(statusCode) && attempt == maxAttempts) {
+                        circuitBreaker.recordFailure();
+                    }
                     throw failure;
                 }
 
@@ -51,6 +73,7 @@ public class HttpRequester {
             } catch (SocketTimeoutException e) {
                 lastFailure = e;
                 if (attempt == maxAttempts) {
+                    circuitBreaker.recordFailure();
                     throw e;
                 }
                 logger.retry(requestName + " agotó el tiempo de espera; reintento " + attempt + " de " + config.getRetries() + ".");
@@ -58,9 +81,15 @@ public class HttpRequester {
             } catch (InterruptedIOException e) {
                 Thread.currentThread().interrupt();
                 throw e;
+            } catch (CircuitBreaker.CircuitOpenException e) {
+                throw e;
             } catch (IOException e) {
                 lastFailure = e;
-                if (e instanceof HttpException || attempt == maxAttempts) {
+                if (e instanceof HttpException) {
+                    throw e;
+                }
+                if (attempt == maxAttempts) {
+                    circuitBreaker.recordFailure();
                     throw e;
                 }
                 logger.retry(requestName + " falló por I/O transitorio; reintento " + attempt + " de " + config.getRetries() + ".");
@@ -72,6 +101,7 @@ public class HttpRequester {
             }
         }
 
+        circuitBreaker.recordFailure();
         throw lastFailure == null ? new IOException(requestName + " falló sin respuesta HTTP.") : lastFailure;
     }
 
@@ -81,6 +111,9 @@ public class HttpRequester {
         connection.setConnectTimeout(config.getConnectTimeout());
         connection.setReadTimeout(config.getReadTimeout());
         connection.setUseCaches(false);
+        if (config.getUserAgent() != null) {
+            connection.setRequestProperty("User-Agent", config.getUserAgent());
+        }
         return connection;
     }
 

@@ -1,5 +1,6 @@
 package com.cadiducho.cservidoresmc.http;
 
+import com.cadiducho.cservidoresmc.cache.Clock;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
@@ -14,12 +15,14 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestHttpRequester {
 
@@ -27,13 +30,15 @@ public class TestHttpRequester {
     private ExecutorService executor;
     private HttpRequester requester;
     private TestLogger logger;
+    private ManualClock clock;
 
     @BeforeEach
     void setUp() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         executor = Executors.newCachedThreadPool();
         server.setExecutor(executor);
-        requester = new HttpRequester();
+        clock = new ManualClock();
+        requester = new HttpRequester(new CircuitBreaker(1, 1000L, 5000L, clock));
         logger = new TestLogger();
     }
 
@@ -120,13 +125,106 @@ public class TestHttpRequester {
         long third = requester.retryDelayMillis(new HttpConfig(500, 500, 2, 250), 3);
         long capped = requester.retryDelayMillis(new HttpConfig(500, 500, 2, 5000), 10);
 
-        org.junit.jupiter.api.Assertions.assertTrue(first >= 250L && first <= 500L);
-        org.junit.jupiter.api.Assertions.assertTrue(third >= 1000L && third <= 1250L);
-        org.junit.jupiter.api.Assertions.assertTrue(capped <= 5000L);
+        assertTrue(first >= 250L && first <= 500L);
+        assertTrue(third >= 1000L && third <= 1250L);
+        assertTrue(capped <= 5000L);
+    }
+
+    @Test
+    void sendsConfiguredUserAgent() throws IOException {
+        AtomicInteger attempts = new AtomicInteger();
+        final String[] seenAgent = new String[1];
+        server.createContext("/agent", exchange -> {
+            attempts.incrementAndGet();
+            seenAgent[0] = exchange.getRequestHeaders().getFirst("User-Agent");
+            respond(exchange, 200, "ok");
+        });
+        server.start();
+
+        String agent = "40ServidoresMC/3.3.0/Bukkit-1.16.5/Java8-Test";
+        String body = requester.get(url("/agent"), "test agent", new HttpConfig(500, 500, 0, 1, agent), logger);
+
+        assertEquals("ok", body);
+        assertEquals(agent, seenAgent[0]);
+        assertEquals(1, attempts.get());
+    }
+
+    @Test
+    void exhaustedRetriesOpenCircuitAndBlockNextCall() {
+        AtomicInteger attempts = new AtomicInteger();
+        server.createContext("/down", exchange -> {
+            attempts.incrementAndGet();
+            respond(exchange, 500, "down");
+        });
+        server.start();
+
+        assertThrows(HttpException.class, () ->
+                requester.get(url("/down"), "test down", new HttpConfig(500, 500, 1, 1), logger));
+        assertEquals(2, attempts.get());
+        assertTrue(requester.getCircuitBreaker().isOpen());
+
+        assertThrows(CircuitBreaker.CircuitOpenException.class, () ->
+                requester.get(url("/down"), "test blocked", new HttpConfig(500, 500, 1, 1), logger));
+        assertEquals(2, attempts.get());
+    }
+
+    @Test
+    void nonRetryableFailureDoesNotOpenCircuit() {
+        AtomicInteger attempts = new AtomicInteger();
+        server.createContext("/missing", exchange -> {
+            attempts.incrementAndGet();
+            respond(exchange, 404, "not found");
+        });
+        server.start();
+
+        assertThrows(HttpException.class, () ->
+                requester.get(url("/missing"), "test missing circuit", new HttpConfig(500, 500, 2, 1), logger));
+
+        assertEquals(1, attempts.get());
+        assertFalse(requester.getCircuitBreaker().isOpen());
+    }
+
+    @Test
+    void successClosesPreviouslyOpenedCircuit() throws IOException {
+        AtomicInteger attempts = new AtomicInteger();
+        server.createContext("/recover", exchange -> {
+            int attempt = attempts.incrementAndGet();
+            if (attempt == 1) {
+                respond(exchange, 500, "down");
+                return;
+            }
+            respond(exchange, 200, "up");
+        });
+        server.start();
+
+        assertThrows(HttpException.class, () ->
+                requester.get(url("/recover"), "test open", new HttpConfig(500, 500, 0, 1), logger));
+        assertTrue(requester.getCircuitBreaker().isOpen());
+
+        clock.advance(1000L);
+
+        String body = requester.get(url("/recover"), "test recover", new HttpConfig(500, 500, 0, 1), logger);
+
+        assertEquals("up", body);
+        assertFalse(requester.getCircuitBreaker().isOpen());
     }
 
     private URL url(String path) throws IOException {
         return new URL("http://127.0.0.1:" + server.getAddress().getPort() + path);
+    }
+
+    private static class ManualClock implements Clock {
+
+        private long timeMillis;
+
+        @Override
+        public long currentTimeMillis() {
+            return timeMillis;
+        }
+
+        private void advance(long millis) {
+            timeMillis += millis;
+        }
     }
 
     private void respond(HttpExchange exchange, int statusCode, String body) throws IOException {
