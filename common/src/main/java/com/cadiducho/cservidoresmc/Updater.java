@@ -6,6 +6,7 @@ import com.cadiducho.cservidoresmc.api.CSPlugin;
 import com.cadiducho.cservidoresmc.http.HttpConfig;
 import com.cadiducho.cservidoresmc.http.HttpLogger;
 import com.cadiducho.cservidoresmc.http.HttpRequester;
+import com.cadiducho.cservidoresmc.http.UserAgent;
 import com.cadiducho.cservidoresmc.model.updater.GitHubReleaseInfo;
 import com.cadiducho.cservidoresmc.model.updater.UpdateCheckResult;
 import com.cadiducho.cservidoresmc.model.updater.UpdateCheckStatus;
@@ -306,7 +307,11 @@ public class Updater {
     }
 
     private HttpConfig httpConfig() {
-        return HttpConfig.from(plugin.getCSConfiguration());
+        return HttpConfig.from(plugin.getCSConfiguration(), userAgent());
+    }
+
+    private String userAgent() {
+        return UserAgent.build(installedVersion, plugin.getServerPlatform(), minecraftVersion);
     }
 
     private HttpLogger httpLogger() {

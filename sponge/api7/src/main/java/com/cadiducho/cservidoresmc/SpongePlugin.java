@@ -262,6 +262,16 @@ public class SpongePlugin implements CSPlugin {
     }
 
     @Override
+    public String getServerPlatform() {
+        return "Sponge";
+    }
+
+    @Override
+    public String getServerVersion() {
+        return game.getPlatform().getMinecraftVersion().getName();
+    }
+
+    @Override
     public void dispatchCommand(String command) {
         getScheduler().runGlobal(() -> Sponge.getCommandManager().process(Sponge.getServer().getConsole(), command));
     }

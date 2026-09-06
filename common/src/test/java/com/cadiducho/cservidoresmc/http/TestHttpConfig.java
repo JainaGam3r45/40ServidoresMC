@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 public class TestHttpConfig {
 
@@ -30,6 +31,7 @@ public class TestHttpConfig {
         assertEquals(6000, httpConfig.getConnectTimeout());
         assertEquals(HttpConfig.MAX_RETRIES, httpConfig.getRetries());
         assertEquals(800, httpConfig.getRetryBackoff());
+        assertNull(httpConfig.getUserAgent());
     }
 
     @Test
@@ -53,6 +55,13 @@ public class TestHttpConfig {
         HttpConfig httpConfig = new HttpConfig(5000, 5000, 100, 250);
 
         assertEquals(HttpConfig.MAX_RETRIES, httpConfig.getRetries());
+    }
+
+    @Test
+    void keepsProvidedUserAgent() {
+        HttpConfig httpConfig = HttpConfig.from(new TestConfiguration(), "40ServidoresMC/3.3.0/Bukkit-1.16.5/Java8-Test");
+
+        assertEquals("40ServidoresMC/3.3.0/Bukkit-1.16.5/Java8-Test", httpConfig.getUserAgent());
     }
 
     private static class TestConfiguration implements CSConfiguration {

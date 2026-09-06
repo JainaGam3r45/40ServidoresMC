@@ -7,6 +7,7 @@ import com.cadiducho.cservidoresmc.cache.TtlCache;
 import com.cadiducho.cservidoresmc.http.HttpConfig;
 import com.cadiducho.cservidoresmc.http.HttpLogger;
 import com.cadiducho.cservidoresmc.http.HttpRequester;
+import com.cadiducho.cservidoresmc.http.UserAgent;
 import com.cadiducho.cservidoresmc.model.ServerStats;
 import com.cadiducho.cservidoresmc.model.VoteResponse;
 import com.cadiducho.cservidoresmc.model.VoteStatus;
@@ -168,7 +169,11 @@ public class ApiClient {
     }
 
     private HttpConfig httpConfig() {
-        return HttpConfig.from(plugin.getCSConfiguration());
+        return HttpConfig.from(plugin.getCSConfiguration(), userAgent());
+    }
+
+    private String userAgent() {
+        return UserAgent.build(plugin.getPluginVersion(), plugin.getServerPlatform(), plugin.getServerVersion());
     }
 
     private HttpLogger httpLogger() {

@@ -13,17 +13,27 @@ public class HttpConfig {
     private final int readTimeout;
     private final int retries;
     private final int retryBackoff;
+    private final String userAgent;
 
     public HttpConfig(int connectTimeout, int readTimeout, int retries, int retryBackoff) {
+        this(connectTimeout, readTimeout, retries, retryBackoff, null);
+    }
+
+    public HttpConfig(int connectTimeout, int readTimeout, int retries, int retryBackoff, String userAgent) {
         this.connectTimeout = positiveOrDefault(connectTimeout, DEFAULT_TIMEOUT);
         this.readTimeout = positiveOrDefault(readTimeout, DEFAULT_TIMEOUT);
         this.retries = Math.min(MAX_RETRIES, Math.max(0, retries));
         this.retryBackoff = positiveOrDefault(retryBackoff, DEFAULT_RETRY_BACKOFF);
+        this.userAgent = userAgent == null || userAgent.trim().isEmpty() ? null : userAgent.trim();
     }
 
     public static HttpConfig from(CSConfiguration configuration) {
+        return from(configuration, null);
+    }
+
+    public static HttpConfig from(CSConfiguration configuration, String userAgent) {
         if (configuration == null) {
-            return new HttpConfig(DEFAULT_TIMEOUT, DEFAULT_TIMEOUT, DEFAULT_RETRIES, DEFAULT_RETRY_BACKOFF);
+            return new HttpConfig(DEFAULT_TIMEOUT, DEFAULT_TIMEOUT, DEFAULT_RETRIES, DEFAULT_RETRY_BACKOFF, userAgent);
         }
 
         int readTimeout = configuration.getInt("api.readTimeout", "readTimeOut", DEFAULT_TIMEOUT);
@@ -31,7 +41,7 @@ public class HttpConfig {
         int retries = configuration.getInt("api.retries", "httpRetries", DEFAULT_RETRIES);
         int retryBackoff = configuration.getInt("api.retryBackoffMillis", "httpRetryBackoff", DEFAULT_RETRY_BACKOFF);
 
-        return new HttpConfig(connectTimeout, readTimeout, retries, retryBackoff);
+        return new HttpConfig(connectTimeout, readTimeout, retries, retryBackoff, userAgent);
     }
 
     public int getConnectTimeout() {
@@ -48,6 +58,10 @@ public class HttpConfig {
 
     public int getRetryBackoff() {
         return retryBackoff;
+    }
+
+    public String getUserAgent() {
+        return userAgent;
     }
 
     private static int positiveOrDefault(int value, int defaultValue) {

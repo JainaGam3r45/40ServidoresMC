@@ -156,6 +156,20 @@ public interface CSPlugin {
     String getPluginVersion();
 
     /**
+     * Identificador corto de plataforma para el User-Agent HTTP (Bukkit, Sponge, ...).
+     */
+    default String getServerPlatform() {
+        return "Unknown";
+    }
+
+    /**
+     * Versión del servidor/Minecraft usada en el User-Agent HTTP.
+     */
+    default String getServerVersion() {
+        return "unknown";
+    }
+
+    /**
      * Ejecutar un comando deseado por la consola del servidor
      * @param command El comando deseado
      */
