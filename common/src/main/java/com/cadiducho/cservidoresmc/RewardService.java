@@ -233,7 +233,7 @@ public class RewardService {
         }
 
         if (status == VoteStatus.ALREADY_VOTED) {
-            recordVote(player, reference.getUniqueId());
+            // Do not call recordVote here: bumping lastVoteAt without a reward stretches the local cooldown.
             invalidateVoteCaches(player);
             finishRechecks(pendingKey);
             return;

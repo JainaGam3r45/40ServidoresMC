@@ -275,6 +275,57 @@ public class TestRewardService {
     }
 
     @Test
+    void recheckAlreadyVotedDoesNotExtendCooldownWithoutReward() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        AtomicLong clock = new AtomicLong(1_000L);
+        PlayerVoteStore store = new PlayerVoteStore(tempDir, plugin);
+        TestScheduler scheduler = plugin.scheduler;
+        RewardService rewardService = new RewardService(plugin, store, scheduler, () -> "2026-06-18", clock::get);
+        plugin.setRewardService(rewardService);
+        plugin.setApiClient(new FakeApiClient(plugin, vote("2")));
+        TestSender sender = new TestSender("Cadiducho");
+        scheduler.connect(sender);
+
+        rewardService.handleVoteResponse(sender.getName(), sender, vote("0"));
+        scheduler.runNextDelayed();
+
+        assertEquals(0, plugin.commands.size());
+        assertEquals(0L, store.lastVoteAt("Cadiducho", PLAYER_UUID));
+
+        clock.addAndGet(TimeUnit.HOURS.toMillis(3));
+        sender.messages.clear();
+        rewardService.handleVoteResponse(sender.getName(), sender, vote("2"));
+
+        assertTrue(sender.messages.stream().anyMatch(message -> message.contains("https://40servidoresmc.es")));
+        assertFalse(sender.messages.stream().anyMatch(message ->
+                message.contains("Ya has votado y recibido tu recompensa")));
+        assertEquals(0L, store.lastVoteAt("Cadiducho", PLAYER_UUID));
+    }
+
+    @Test
+    void recheckAlreadyVotedDoesNotRefreshExistingLastVoteAt() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        AtomicLong clock = new AtomicLong(1_000L);
+        PlayerVoteStore store = new PlayerVoteStore(tempDir, plugin);
+        TestScheduler scheduler = plugin.scheduler;
+        RewardService rewardService = new RewardService(plugin, store, scheduler, () -> "2026-06-18", clock::get);
+        plugin.setRewardService(rewardService);
+        plugin.setApiClient(new FakeApiClient(plugin, vote("2")));
+        TestSender sender = new TestSender("Cadiducho");
+        scheduler.connect(sender);
+
+        assertTrue(store.recordVote(sender.getName(), PLAYER_UUID, clock.get()));
+        long originalLastVoteAt = store.lastVoteAt("Cadiducho", PLAYER_UUID);
+
+        rewardService.handleVoteResponse(sender.getName(), sender, vote("0"));
+        clock.addAndGet(TimeUnit.HOURS.toMillis(2));
+        scheduler.runNextDelayed();
+
+        assertEquals(originalLastVoteAt, store.lastVoteAt("Cadiducho", PLAYER_UUID));
+        assertEquals(0, plugin.getPluginMetrics().getRewardsDelivered());
+    }
+
+    @Test
     void alreadyVotedWithoutLocalRewardDoesNotEarlyExit() {
         TestPlugin plugin = new TestPlugin(tempDir);
         AtomicLong clock = new AtomicLong(1_000L);
