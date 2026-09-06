@@ -3,10 +3,27 @@
 
 Inicio
 ------------
-40ServidoresMC es una web de rankings de servidores Online. 
+40ServidoresMC es una web de rankings de servidores Online.
 Con este plugin podrás otorgar a tus jugadores premios por votar a tu servidor, y potenciar así el puesto en el ranking.
 
 Puedes encontrar mucha más información en nuestra [Wiki](https://github.com/Cadiducho/40ServidoresMC/wiki) y aprende todo lo necesario sobre este plugin!
+
+Compatibilidad
+------------
+Hay dos artefactos de producción:
+
+| JAR | Dónde va |
+| --- | --- |
+| `40ServidoresMC-*-Bukkit.jar` | Servidores Spigot, Paper, Purpur y forks basados en Bukkit/Spigot. |
+| `40ServidoresMC-*-Sponge-API7.jar` | Servidores Sponge API 7. |
+
+**Paper / Purpur / Spigot.** El JAR Bukkit es el que debes instalar en el servidor de juego. Paper y Purpur suelen funcionar igual que Spigot porque siguen la API Bukkit; no hace falta un JAR aparte.
+
+**Folia.** El JAR Bukkit declara `folia-supported: true`. Si el servidor es Folia, las tareas van por `GlobalRegionScheduler` (global) y `EntityScheduler` (por jugador), en lugar del scheduler clásico de un solo hilo. Eso es preparación real del scheduler; no es un “soporte Folia completo” probado en producción.
+
+**Proxies (BungeeCord, Velocity, Waterfall, etc.).** El plugin no se instala en el proxy. Va en cada servidor de juego (backend) donde quieras premios y comandos. Detrás de un proxy funciona como en un Spigot/Paper normal, siempre que el JAR esté en ese backend.
+
+**Sponge.** Usa el JAR de Sponge API 7. No mezcles el JAR Bukkit en un servidor Sponge.
 
 Configuración
 ------------
@@ -43,9 +60,22 @@ La web de 40ServidoresMC permite un nuevo voto cuando se cumplen **las dos** con
 - no haber votado ese mismo **día natural UTC**
 - haber pasado al menos **12 horas** desde el voto anterior
 
-El plugin usa esa misma regla para el tiempo de `%time%` en `messages.alreadyRewarded`, recordatorios y placeholders de disponibilidad. Ya no asume una ventana fija de 24 horas.
+En la práctica el plugin calcula el próximo momento válido como el **más tardío** entre “último voto + 12 h” y “medianoche UTC del día siguiente”. Por eso a veces el tiempo restante se acerca a ~24 h (por ejemplo si votaste temprano en el día UTC): no es un bug ni una ventana fija de 24 horas; es el máximo de esas dos condiciones.
 
-La API `api2.php` puede devolver, además de `status` y `web`, los campos `mensaje` y `tipovoto`. Un `status: 0` no siempre significa “no has votado”: si el `mensaje` indica que el voto ya fue recompensado, el plugin lo trata como reclamado. Si además no hay cooldown local activo (regla UTC + 12h), se muestra el enlace de voto en lugar del mensaje “ya votaste… en 0s”, para no bloquear cuentas sin ciclo local.
+El plugin usa esa misma regla para `%time%` en `messages.alreadyRewarded`, recordatorios y placeholders de disponibilidad.
+
+### Qué ve el jugador con `/voto40`
+
+| Situación | Qué debería ver |
+| --- | --- |
+| Aún no ha votado en la web (o el ciclo web ya admite otro voto) | Enlace de voto (`messages.vote.notVotedToday` + URL de la API). |
+| Votó y el plugin puede entregar el premio | Recompensa (`messages.voteClaim`) y comandos de `rewards.commands`. |
+| Ya reclamó el premio y la ventana local UTC+12 h **sigue activa** | Mensaje “ya recompensado” / “ya votaste” con `%time%` (**sin** enlace). Es el comportamiento esperado mientras el cooldown local no caduca. |
+| La API dice que el voto ya está recompensado, pero la ventana local **ya caducó** | Otra vez el **enlace** de voto, no un “ya votaste… en 0s”. Así no se queda bloqueado sin forma de seguir el ciclo. |
+
+Resumen rápido: **cooldown local activo = mensaje sin enlace**; **cooldown local terminado = enlace** (aunque la API aún diga “ya recompensado”). Si pasan horas y solo ves “ya votaste” sin enlace, casi siempre es porque la regla UTC + 12 h todavía no liberó el ciclo local.
+
+La API `api2.php` puede devolver, además de `status` y `web`, los campos `mensaje` y `tipovoto`. Un `status: 0` no siempre significa “no has votado”: si el `mensaje` indica que el voto ya fue recompensado, el plugin lo trata como reclamado y aplica la tabla de arriba.
 
 Las claves antiguas como `clave`, `mensaje`, `tag` y `comandosCustom` siguen funcionando como fallback, pero el migrador las moverá a la estructura nueva para evitar confusión. Si falta una clave nueva de `messages.*`, el plugin usa el texto en español embebido en el código como respaldo. Las configs v9 con claves por línea (`messages.metrics.header`, etc.) se convierten automáticamente a listas si falta `messages.*.lines`.
 
