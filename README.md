@@ -40,7 +40,7 @@ Claves principales:
 | `messages.alreadyRewarded` | Mensaje cuando el jugador ya recibió la recompensa. Usa `%time%`. |
 | `messages.commands.*` | Errores genéricos de comandos (`noPermission`, `onlyPlayer`, `unexpectedError`, `cooldown`). |
 | `messages.apiException` | Error genérico de la API en voto y estadísticas. |
-| `messages.vote.*` | Mensajes del flujo de voto (`checking`, `notVotedToday`, `error`, `rewardSaveFailed`). |
+| `messages.vote.*` | Mensajes del flujo de voto (`checking`, `notVotedToday`, `listedButNotClaimable`, `error`, `rewardSaveFailed`). |
 | `messages.stats.lines` | Lista de líneas de `/stats40`. Placeholders: `%server%`, `%rank%`, `%votesToday%`, `%rewardedToday%`, `%votesWeek%`, `%rewardedWeek%`, `%lastVotes%`. |
 | `messages.streak.own.lines` / `admin.lines` / `usage.lines` | Listas de líneas de `/streak40`. |
 | `messages.streak.formats.*` | Textos para fechas y disponibilidad de voto en rachas. |
@@ -69,6 +69,7 @@ El plugin usa esa misma regla para `%time%` en `messages.alreadyRewarded`, recor
 | Situación | Qué debería ver |
 | --- | --- |
 | Aún no ha votado en la web (o el ciclo web ya admite otro voto) | Enlace de voto (`messages.vote.notVotedToday` + URL de la API). |
+| `validateVote` dice que no votó, pero aparece en `ultimos20votos` sin recompensar | Aviso `messages.vote.listedButNotClaimable` (y el auto-reward sigue reintentando). |
 | Votó y el plugin puede entregar el premio | Recompensa (`messages.voteClaim`) y comandos de `rewards.commands`. |
 | Ya reclamó el premio y la ventana local UTC+12 h **sigue activa** | Mensaje “ya recompensado” / “ya votaste” con `%time%` (**sin** enlace). Es el comportamiento esperado mientras el cooldown local no caduca. |
 | La API dice que el voto ya está recompensado, pero la ventana local **ya caducó** | Otra vez el **enlace** de voto, no un “ya votaste… en 0s”. Así no se queda bloqueado sin forma de seguir el ciclo. |

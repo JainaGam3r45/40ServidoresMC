@@ -3,6 +3,7 @@ package com.cadiducho.cservidoresmc;
 import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.api.CSPlugin;
 import com.cadiducho.cservidoresmc.config.CSConfiguration;
+import com.cadiducho.cservidoresmc.model.ServerStats;
 import com.cadiducho.cservidoresmc.model.VoteResponse;
 import com.google.gson.Gson;
 import org.junit.jupiter.api.Test;
@@ -395,6 +396,49 @@ public class TestRewardService {
         assertTrue(sender.messages.stream().anyMatch(message -> message.contains("https://40servidoresmc.es")));
     }
 
+    @Test
+    void notVotedButListedUnrewardedShowsListedMessage() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        RewardService rewardService = rewardService(plugin, plugin.scheduler);
+        plugin.setRewardService(rewardService);
+        FakeApiClient api = new FakeApiClient(plugin, vote("1"));
+        api.setServerStats(statsWithVote("JainaGamer45", 0));
+        plugin.setApiClient(api);
+        TestSender sender = new TestSender("JainaGamer45");
+        plugin.scheduler.connect(sender);
+
+        rewardService.handleVoteResponse(sender.getName(), sender, vote("0"));
+
+        assertTrue(sender.messages.stream().anyMatch(message ->
+                message.toLowerCase().contains("registrado") || message.toLowerCase().contains("canjear")));
+        assertFalse(sender.messages.stream().anyMatch(message ->
+                message.toLowerCase().contains("no has votado")
+                        || message.toLowerCase().contains("have not voted")));
+        assertTrue(rewardService.hasPendingReward(sender.getName()));
+    }
+
+    @Test
+    void notVotedButListedRewardedShowsAlreadyRewarded() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        AtomicLong clock = new AtomicLong(1_000L);
+        PlayerVoteStore store = new PlayerVoteStore(tempDir, plugin);
+        store.recordVote("Cadiducho", PLAYER_UUID, clock.get());
+        RewardService rewardService = new RewardService(plugin, store, plugin.scheduler, () -> "2026-06-18", clock::get);
+        plugin.setRewardService(rewardService);
+        FakeApiClient api = new FakeApiClient(plugin);
+        api.setServerStats(statsWithVote("Cadiducho", 1));
+        plugin.setApiClient(api);
+        TestSender sender = new TestSender("Cadiducho");
+        plugin.scheduler.connect(sender);
+
+        rewardService.handleVoteResponse(sender.getName(), sender, vote("0"));
+
+        assertTrue(sender.messages.stream().anyMatch(message ->
+                message.contains("Ya has votado y recibido tu recompensa")));
+        assertFalse(sender.messages.stream().anyMatch(message ->
+                message.toLowerCase().contains("no has votado")));
+    }
+
     private RewardService rewardService(TestPlugin plugin, TestScheduler scheduler) {
         return new RewardService(plugin, new File(tempDir, "rewarded-votes.properties"), scheduler, () -> "2026-06-18");
     }
@@ -418,10 +462,15 @@ public class TestRewardService {
     private static class FakeApiClient extends ApiClient {
 
         private final Queue<Object> responses = new ArrayDeque<>();
+        private ServerStats serverStats = emptyStats();
 
         private FakeApiClient(CSPlugin plugin, Object... responses) {
             super(plugin, new Gson(), null, "http://localhost/api?clave=");
             this.responses.addAll(Arrays.asList(responses));
+        }
+
+        private void setServerStats(ServerStats serverStats) {
+            this.serverStats = serverStats == null ? emptyStats() : serverStats;
         }
 
         @Override
@@ -434,6 +483,35 @@ public class TestRewardService {
             }
             return CompletableFuture.completedFuture((VoteResponse) next);
         }
+
+        @Override
+        public CompletableFuture<ServerStats> fetchServerStats() {
+            return CompletableFuture.completedFuture(serverStats);
+        }
+
+        @Override
+        public void invalidateServerStatsCache() {
+        }
+
+        @Override
+        public void invalidateVoteCache(String player) {
+        }
+    }
+
+    private static ServerStats emptyStats() {
+        return new Gson().fromJson(
+                "{\"nombre\":\"Test\",\"puesto\":1,\"votoshoy\":0,\"votoshoypremiados\":0,"
+                        + "\"votossemanales\":0,\"votossemanalespremiados\":0,\"ultimos20votos\":[]}",
+                ServerStats.class);
+    }
+
+    private static ServerStats statsWithVote(String usuario, int recompensado) {
+        return new Gson().fromJson(
+                "{\"nombre\":\"Test\",\"puesto\":1,\"votoshoy\":1,\"votoshoypremiados\":0,"
+                        + "\"votossemanales\":1,\"votossemanalespremiados\":0,"
+                        + "\"ultimos20votos\":[{\"usuario\":\"" + usuario + "\",\"recompensado\":"
+                        + recompensado + "}]}",
+                ServerStats.class);
     }
 
     private static class TestPlugin implements CSPlugin {

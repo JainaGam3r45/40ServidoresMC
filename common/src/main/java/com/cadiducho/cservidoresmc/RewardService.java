@@ -2,6 +2,8 @@ package com.cadiducho.cservidoresmc;
 
 import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.api.CSPlugin;
+import com.cadiducho.cservidoresmc.model.ServerStats;
+import com.cadiducho.cservidoresmc.model.ServerVote;
 import com.cadiducho.cservidoresmc.model.VoteResponse;
 import com.cadiducho.cservidoresmc.model.VoteStatus;
 import com.cadiducho.cservidoresmc.scheduler.CSScheduler;
@@ -73,8 +75,7 @@ public class RewardService {
                     handleAlreadyVoted(playerName, uuid, reference, web);
                     return;
                 }
-                plugin.runSenderIfActive(sender, resolved -> resolved.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), web));
-                scheduleAutoReward(playerName, reference);
+                resolveAmbiguousNotVoted(playerName, uuid, sender, reference, web);
                 break;
             case SUCCESS:
                 handleSuccessResponse(playerName, uuid, sender, reference);
@@ -293,8 +294,7 @@ public class RewardService {
                     handleAlreadyVoted(playerName, uuid, reference, web);
                     return;
                 }
-                sender.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), web);
-                scheduleAutoReward(playerName, reference);
+                resolveAmbiguousNotVoted(playerName, uuid, sender, reference, web);
                 break;
             case SUCCESS:
                 deliverReward(playerName, uuid, reference, true);
@@ -306,6 +306,63 @@ public class RewardService {
                 sendMessage(reference, messages().voteError());
                 break;
         }
+    }
+
+    /**
+     * API dijo NOT_VOTED. Antes de decir "no has votado", miramos ultimos20votos:
+     * a veces la web ya listó el nick y validateVote aún no lo reconoce.
+     */
+    private void resolveAmbiguousNotVoted(String playerName, String uuid, CSCommandSender sender,
+                                          PlayerReference reference, String web) {
+        final String voteUrl = web == null ? "" : web;
+        plugin.getApiClient().invalidateServerStatsCache();
+        plugin.getApiClient().fetchServerStats().thenAccept(stats -> {
+            if (!plugin.isActive()) {
+                return;
+            }
+            plugin.runSenderIfActive(sender, resolved -> applyStatsForNotVoted(
+                    playerName, uuid, resolved, reference, voteUrl, stats));
+        }).exceptionally(error -> {
+            debug("Stats fallback falló para " + playerName + ": " + error.getMessage());
+            if (plugin.isActive()) {
+                plugin.runSenderIfActive(sender, resolved -> {
+                    resolved.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), voteUrl);
+                    scheduleAutoReward(playerName, PlayerReference.from(resolved));
+                });
+            }
+            return null;
+        });
+    }
+
+    private void applyStatsForNotVoted(String playerName, String uuid, CSCommandSender sender,
+                                       PlayerReference reference, String web, ServerStats stats) {
+        ServerVote listed = findRecentVote(stats, sender.getName());
+        if (listed != null && listed.isRewarded()) {
+            debug("API NOT_VOTED pero stats marca recompensado a " + playerName + ".");
+            handleAlreadyVoted(playerName, uuid, reference, web);
+            return;
+        }
+        if (listed != null) {
+            // Listado sin premio: no mentimos con "no has votado". Seguimos el auto-reward.
+            plugin.log("[Vote] " + playerName + " aparece en ultimos20votos sin recompensar, pero validateVote dijo NOT_VOTED.");
+            sender.sendMessageWithTag(messages().listedButNotClaimable());
+            scheduleAutoReward(playerName, reference);
+            return;
+        }
+        sender.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), web);
+        scheduleAutoReward(playerName, reference);
+    }
+
+    private static ServerVote findRecentVote(ServerStats stats, String nick) {
+        if (stats == null || stats.getLastVotes() == null || nick == null) {
+            return null;
+        }
+        for (ServerVote vote : stats.getLastVotes()) {
+            if (vote.getName() != null && vote.getName().equalsIgnoreCase(nick)) {
+                return vote;
+            }
+        }
+        return null;
     }
 
     private void handleAlreadyVoted(String playerName, String uuid, PlayerReference reference, String web) {

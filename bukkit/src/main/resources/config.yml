@@ -38,6 +38,7 @@ messages:
   vote:
     checking: "&7Checking vote..."
     notVotedToday: "&6You have not voted today! You can do it at &a "
+    listedButNotClaimable: "&eYour vote is registered but cannot be claimed yet. Try again in a few minutes or ask an admin."
     error: "&7An error occurred. Try again later or contact an administrator."
     rewardSaveFailed: "&cCould not save your rewarded vote. Contact an administrator."
 
