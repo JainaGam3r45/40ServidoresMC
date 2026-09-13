@@ -26,6 +26,8 @@ public class PluginMessages {
             "&eTu voto está registrado pero aún no se puede canjear. Reintenta en unos minutos o avisa a un admin.";
     private static final String DEFAULT_VOTE_ERROR = "&7Ha ocurrido un error. Prueba más tarde o avisa a un adminsitrador";
     private static final String DEFAULT_REWARD_SAVE_FAILED = "&cNo se pudo registrar tu voto premiado. Avisa a un administrador.";
+    private static final String DEFAULT_VOTE_DELIVERY_FAILED = "&cNo se pudo entregar el premio. Vuelve a usar /voto40 en unos minutos.";
+    private static final String DEFAULT_VOTE_ACK_FAILED = "&ePremio entregado, pero no se pudo confirmar con la web. El próximo /voto40 reintentará la confirmación.";
     private static final String DEFAULT_STATS_EXCEPTION = "&cHa ocurrido una excepción. Revisa la consola o avisa a un administrador";
     private static final String DEFAULT_STREAK_UNAVAILABLE = "&cEl sistema de rachas no está disponible.";
     private static final String DEFAULT_STREAK_LOADING = "&eLos datos de racha de &6%player% &ese están cargando. Inténtalo de nuevo en unos segundos.";
@@ -161,6 +163,14 @@ public class PluginMessages {
 
     public String rewardSaveFailed() {
         return get("messages.vote.rewardSaveFailed", DEFAULT_REWARD_SAVE_FAILED);
+    }
+
+    public String voteDeliveryFailed() {
+        return get("messages.vote.deliveryFailed", DEFAULT_VOTE_DELIVERY_FAILED);
+    }
+
+    public String voteAckFailed() {
+        return get("messages.vote.ackFailed", DEFAULT_VOTE_ACK_FAILED);
     }
 
     public String statsException() {

@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.InterruptedIOException;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.SocketTimeoutException;
 import java.net.URL;
@@ -14,6 +15,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class HttpRequester {
 
     private static final long MAX_RETRY_BACKOFF_MILLIS = 5000L;
+    private static final long DEFAULT_RATE_LIMIT_FALLBACK_MILLIS = 5000L;
 
     private final CircuitBreaker circuitBreaker;
 
@@ -45,6 +47,7 @@ public class HttpRequester {
             HttpURLConnection connection = null;
             try {
                 connection = openConnection(url, method, config);
+                writeBodyIfPresent(connection, config);
                 int statusCode = connection.getResponseCode();
                 String body = readResponseBody(connection, statusCode);
 
@@ -52,6 +55,16 @@ public class HttpRequester {
                     circuitBreaker.recordSuccess();
                     logger.debug(requestName + " completado con HTTP " + statusCode + " en intento " + attempt + ".");
                     return body;
+                }
+
+                if (statusCode == 429) {
+                    long retryAfter = parseRetryAfterMillis(connection, DEFAULT_RATE_LIMIT_FALLBACK_MILLIS);
+                    circuitBreaker.recordFailure();
+                    throw new RateLimitedException(
+                            requestName + " limitado por HTTP 429" + bodySummary(body),
+                            body,
+                            retryAfter
+                    );
                 }
 
                 HttpException failure = new HttpException(
@@ -83,6 +96,8 @@ public class HttpRequester {
                 throw e;
             } catch (CircuitBreaker.CircuitOpenException e) {
                 throw e;
+            } catch (RateLimitedException e) {
+                throw e;
             } catch (IOException e) {
                 lastFailure = e;
                 if (e instanceof HttpException) {
@@ -111,10 +126,29 @@ public class HttpRequester {
         connection.setConnectTimeout(config.getConnectTimeout());
         connection.setReadTimeout(config.getReadTimeout());
         connection.setUseCaches(false);
+        connection.setRequestProperty("Accept", "application/json");
         if (config.getUserAgent() != null) {
             connection.setRequestProperty("User-Agent", config.getUserAgent());
         }
+        if (config.getAuthorization() != null) {
+            connection.setRequestProperty("Authorization", config.getAuthorization());
+        }
+        if (config.getBody() != null) {
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        }
         return connection;
+    }
+
+    private void writeBodyIfPresent(HttpURLConnection connection, HttpConfig config) throws IOException {
+        if (config.getBody() == null) {
+            return;
+        }
+        byte[] bytes = config.getBody().getBytes(StandardCharsets.UTF_8);
+        connection.setFixedLengthStreamingMode(bytes.length);
+        try (OutputStream output = connection.getOutputStream()) {
+            output.write(bytes);
+        }
     }
 
     private String readResponseBody(HttpURLConnection connection, int statusCode) throws IOException {
@@ -131,6 +165,22 @@ public class HttpRequester {
                 body.append(buffer, 0, read);
             }
             return body.toString();
+        }
+    }
+
+    private long parseRetryAfterMillis(HttpURLConnection connection, long fallbackMillis) {
+        String header = connection.getHeaderField("Retry-After");
+        if (header == null || header.trim().isEmpty()) {
+            return fallbackMillis;
+        }
+        try {
+            long seconds = Long.parseLong(header.trim());
+            if (seconds < 0L) {
+                return fallbackMillis;
+            }
+            return seconds * 1000L;
+        } catch (NumberFormatException ignored) {
+            return fallbackMillis;
         }
     }
 

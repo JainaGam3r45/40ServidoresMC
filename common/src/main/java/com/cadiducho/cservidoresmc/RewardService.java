@@ -2,14 +2,18 @@ package com.cadiducho.cservidoresmc;
 
 import com.cadiducho.cservidoresmc.api.CSCommandSender;
 import com.cadiducho.cservidoresmc.api.CSPlugin;
-import com.cadiducho.cservidoresmc.model.ServerStats;
-import com.cadiducho.cservidoresmc.model.ServerVote;
-import com.cadiducho.cservidoresmc.model.VoteResponse;
-import com.cadiducho.cservidoresmc.model.VoteStatus;
+import com.cadiducho.cservidoresmc.http.HttpException;
+import com.cadiducho.cservidoresmc.model.PendingVote;
+import com.cadiducho.cservidoresmc.model.PendingVotesResponse;
 import com.cadiducho.cservidoresmc.scheduler.CSScheduler;
 import com.cadiducho.cservidoresmc.scheduler.PlayerReference;
+import com.cadiducho.cservidoresmc.util.IpSanitizer;
 
 import java.io.File;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -18,9 +22,14 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
+/**
+ * Delivers vote rewards using API v3: pending votes then ack.
+ */
 public class RewardService {
 
     private static final List<String> DEFAULT_RECHECK_DELAYS = Arrays.asList("10", "30", "60");
+    /** Website link shown when the player still needs to vote. Hardcoded on purpose. */
+    public static final String VOTE_URL = "https://www.40servidoresmc.es/";
 
     private final CSPlugin plugin;
     private final PlayerVoteStore playerVoteStore;
@@ -53,51 +62,62 @@ public class RewardService {
         this.clock = clock;
     }
 
-    public void handleVoteResponse(String player, CSCommandSender sender, VoteResponse voteResponse) {
+    public void handlePendingVotes(String player, CSCommandSender sender, PendingVotesResponse pending, VoteTrace trace) {
         PlayerReference reference = PlayerReference.from(sender);
         String playerName = reference.getName().isEmpty() ? player : reference.getName();
         String uuid = reference.getUniqueId();
-        if (voteResponse == null || voteResponse.getStatus() == null) {
+        VoteTrace voteTrace = trace == null ? VoteTrace.noop() : trace;
+
+        if (pending == null) {
+            voteTrace.error("pending response null");
             sendMessage(reference, messages().voteError());
+            voteTrace.done();
             return;
         }
 
-        String web = voteResponse.getWeb();
-        VoteStatus status = voteResponse.getStatus();
-        debugApiResponse(playerName, voteResponse);
-
-        switch (status) {
-            case NOT_VOTED:
-                if (sendAlreadyRewardedIfRewardedToday(sender)) {
-                    return;
-                }
-                if (isAlreadyRewardedByApi(voteResponse)) {
-                    handleAlreadyVoted(playerName, uuid, reference, web);
-                    return;
-                }
-                resolveAmbiguousNotVoted(playerName, uuid, sender, reference, web);
-                break;
-            case SUCCESS:
-                handleSuccessResponse(playerName, uuid, sender, reference);
-                break;
-            case ALREADY_VOTED:
-                handleAlreadyVoted(playerName, uuid, reference, web);
-                break;
-            case INVALID_kEY:
-                sendMessage(reference, messages().invalidApiKey());
-                break;
-            default:
-                sendMessage(reference, messages().voteError());
-                break;
+        List<PendingVote> votes = pending.safePendingVotes();
+        if (!votes.isEmpty()) {
+            voteTrace.branch("deliver");
+            deliverAndAck(playerName, uuid, reference, votes, voteTrace);
+            return;
         }
+
+        if (pending.isPuedeVotarYa()) {
+            voteTrace.branch("show_link");
+            plugin.runSenderIfActive(sender, resolved ->
+                    resolved.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), VOTE_URL));
+            scheduleAutoReward(playerName, reference, voteTrace);
+            voteTrace.done();
+            return;
+        }
+
+        voteTrace.branch("already_rewarded");
+        String formatted = formatSiguienteVoto(pending.getSiguienteVoto());
+        sendMessage(reference, messages().alreadyRewarded(formatted));
+        voteTrace.done();
+    }
+
+    public void handleVoteApiFailure(CSCommandSender sender, Throwable error, VoteTrace trace) {
+        VoteTrace voteTrace = trace == null ? VoteTrace.noop() : trace;
+        PlayerReference reference = PlayerReference.from(sender);
+        Throwable root = unwrap(error);
+        if (root instanceof HttpException && ((HttpException) root).getStatusCode() == 403) {
+            voteTrace.branch("invalid_key");
+            sendMessage(reference, messages().invalidApiKey());
+            voteTrace.done();
+            return;
+        }
+        voteTrace.error(root == null ? "unknown" : root.getMessage());
+        sendMessage(reference, messages().apiException());
+        voteTrace.done();
     }
 
     public boolean deliverReward(String player, CSCommandSender sender, boolean notifyDuplicate) {
-        return deliverReward(player, sender.getUniqueId(), PlayerReference.from(sender), notifyDuplicate);
+        return deliverReward(player, sender.getUniqueId(), PlayerReference.from(sender), notifyDuplicate, VoteTrace.noop()).ok;
     }
 
     public boolean deliverReward(CSCommandSender sender, boolean notifyDuplicate) {
-        return deliverReward(sender.getName(), sender.getUniqueId(), PlayerReference.from(sender), notifyDuplicate);
+        return deliverReward(sender.getName(), sender.getUniqueId(), PlayerReference.from(sender), notifyDuplicate, VoteTrace.noop()).ok;
     }
 
     public boolean hasPendingReward(String player) {
@@ -115,50 +135,120 @@ public class RewardService {
                 && cachedNextVoteInMillis(player, uuid) > 0L;
     }
 
-    public boolean sendAlreadyRewardedIfActive(CSCommandSender sender) {
+    /**
+     * Local early exit only when the player already has an active local reward window
+     * and there are no pending acks waiting to be retried.
+     */
+    public boolean sendAlreadyRewardedIfActive(CSCommandSender sender, VoteTrace trace) {
+        VoteTrace voteTrace = trace == null ? VoteTrace.noop() : trace;
+        List<Long> pendingAcks = plugin.getApiClient().peekPendingAcks(sender.getName());
+        if (!pendingAcks.isEmpty()) {
+            return false;
+        }
         if (!hasCachedActiveReward(sender.getName(), sender.getUniqueId())) {
             return false;
         }
+        voteTrace.earlyExit("local_active_reward");
         sendAlreadyRewardedMessage(sender.getName(), sender.getUniqueId(), PlayerReference.from(sender));
+        voteTrace.done();
         return true;
     }
 
-    private boolean sendAlreadyRewardedIfRewardedToday(CSCommandSender sender) {
-        if (!hasCachedActiveReward(sender.getName(), sender.getUniqueId())) {
-            return false;
-        }
-        sendAlreadyRewardedMessage(sender.getName(), sender.getUniqueId(), PlayerReference.from(sender));
-        return true;
+    public boolean sendAlreadyRewardedIfActive(CSCommandSender sender) {
+        return sendAlreadyRewardedIfActive(sender, VoteTrace.noop());
     }
 
     public void shutdown() {
     }
 
-    private boolean deliverReward(String player, String uuid, PlayerReference reference, boolean notifyDuplicate) {
+    private void deliverAndAck(String player, String uuid, PlayerReference reference,
+                               List<PendingVote> votes, VoteTrace voteTrace) {
+        List<Long> ids = new ArrayList<>();
+        for (PendingVote vote : votes) {
+            ids.add(vote.getId());
+        }
+
+        scheduler.runGlobal(() -> {
+            if (!plugin.isActive()) {
+                voteTrace.aborted("plugin_inactive");
+                return;
+            }
+
+            boolean online = plugin.isPlayerOnline(player);
+            if (!online) {
+                voteTrace.delivery(false, 0, 0, false, "OFFLINE");
+                plugin.getApiClient().sendAck(ids, player, false, "", voteTrace)
+                        .whenComplete((ack, error) -> {
+                            if (error != null) {
+                                voteTrace.error("ack_failed_after_offline: " + error.getMessage());
+                            }
+                            sendMessage(reference, messages().voteDeliveryFailed());
+                            voteTrace.done();
+                        });
+                return;
+            }
+
+            DeliveryResult delivery = deliverReward(player, uuid, reference, true, voteTrace);
+            boolean delivered = delivery.ok;
+            String userIp = IpSanitizer.forAck(plugin.getPlayerIp(player));
+
+            if (!delivered) {
+                voteTrace.delivery(false, delivery.commandsOk, delivery.commandsTotal, true, delivery.markResult);
+                plugin.getApiClient().sendAck(ids, player, false, userIp, voteTrace)
+                        .whenComplete((ack, error) -> {
+                            if (error != null) {
+                                voteTrace.error("ack_failed_after_delivery_fail: " + error.getMessage());
+                            }
+                            sendMessage(reference, messages().voteDeliveryFailed());
+                            voteTrace.done();
+                        });
+                return;
+            }
+
+            voteTrace.delivery(true, delivery.commandsOk, delivery.commandsTotal, true, delivery.markResult);
+            plugin.getApiClient().sendAck(ids, player, true, userIp, voteTrace)
+                    .whenComplete((ack, error) -> {
+                        if (error != null || ack == null) {
+                            plugin.getApiClient().addPendingAck(player, ids);
+                            sendMessage(reference, messages().voteAckFailed());
+                            voteTrace.done();
+                            return;
+                        }
+                        voteTrace.done();
+                    });
+        });
+    }
+
+    private DeliveryResult deliverReward(String player, String uuid, PlayerReference reference,
+                                         boolean notifyDuplicate, VoteTrace voteTrace) {
         String date = currentDate.get();
         PlayerVoteStore.MarkResult markResult = playerVoteStore.markRewarded(player, uuid, date, clock.get());
         if (markResult == PlayerVoteStore.MarkResult.FAILED) {
             sendMessage(reference, messages().rewardSaveFailed());
-            return false;
+            return DeliveryResult.failed("FAILED", 0, 0);
         }
 
         if (markResult == PlayerVoteStore.MarkResult.DUPLICATE) {
             debug("Premio omitido para " + player + ": ya estaba marcado como entregado.");
-            invalidateVoteCaches(player);
+            plugin.getApiClient().invalidateServerStatsCache();
             if (notifyDuplicate) {
                 sendAlreadyRewardedMessage(player, uuid, reference);
             }
-            return false;
+            return DeliveryResult.failed("DUPLICATE", 0, 0);
         }
 
         recordVote(player, uuid);
         recordStreak(player, uuid);
-        invalidateVoteCaches(player);
+        plugin.getApiClient().invalidateServerStatsCache();
         sendMessage(reference, messages().voteClaim());
 
-        for (String command : plugin.getCSConfiguration().customCommandsList()) {
+        List<String> commands = plugin.getCSConfiguration().customCommandsList();
+        int ok = 0;
+        for (String command : commands) {
             String parsedCommand = PlayerPlaceholders.applyPlayer(command, player);
-            scheduler.runGlobal(() -> plugin.dispatchCommand(parsedCommand));
+            if (plugin.dispatchCommandResult(parsedCommand)) {
+                ok++;
+            }
         }
 
         plugin.getPluginMetrics().incrementRewardsDelivered();
@@ -170,10 +260,11 @@ public class RewardService {
         }
 
         debug("Premio entregado a " + player + ".");
-        return true;
+        boolean allOk = commands.isEmpty() || ok == commands.size();
+        return new DeliveryResult(allOk, "NEW", ok, commands.size());
     }
 
-    private void scheduleAutoReward(String player, PlayerReference reference) {
+    private void scheduleAutoReward(String player, PlayerReference reference, VoteTrace parentTrace) {
         if (!enabled()) {
             debug("Auto-reward desactivado para " + player + ".");
             return;
@@ -192,29 +283,32 @@ public class RewardService {
             }
         }
 
-        scheduleAttempt(player, reference, 1, pendingKey);
+        scheduleAttempt(player, reference, 1, pendingKey, parentTrace);
     }
 
-    private void scheduleAttempt(String player, PlayerReference reference, int attempt, String pendingKey) {
+    private void scheduleAttempt(String player, PlayerReference reference, int attempt, String pendingKey, VoteTrace parentTrace) {
         long delay = delayForAttempt(attempt);
         debug("Recheck " + attempt + " para " + player + " en " + delay + " segundos.");
+        if (parentTrace != null && parentTrace.isEnabled()) {
+            parentTrace.recheck(attempt, delay);
+        }
 
         scheduler.runAsyncLater(() -> {
             if (!plugin.isActive()) {
                 finishRechecks(pendingKey);
                 return;
             }
-            plugin.getApiClient().invalidateVoteCache(player);
-            plugin.getApiClient().validateVote(player).thenAccept(voteResponse -> {
+            VoteTrace recheckTrace = parentTrace != null && parentTrace.isEnabled() ? parentTrace : VoteTrace.noop();
+            plugin.getApiClient().fetchPendingVotes(player, recheckTrace).thenAccept(pending -> {
                 if (!plugin.isActive()) {
                     finishRechecks(pendingKey);
                     return;
                 }
-                handleRecheckResponse(player, reference, voteResponse, attempt, pendingKey);
+                handleRecheckPending(player, reference, pending, attempt, pendingKey, recheckTrace);
             }).exceptionally(e -> {
                 debug("Recheck " + attempt + " falló para " + player + ": " + e.getMessage());
                 if (plugin.isActive() && attempt < maxAttempts()) {
-                    scheduleAttempt(player, reference, attempt + 1, pendingKey);
+                    scheduleAttempt(player, reference, attempt + 1, pendingKey, parentTrace);
                 } else {
                     finishRechecks(pendingKey);
                 }
@@ -223,25 +317,24 @@ public class RewardService {
         }, delay, TimeUnit.SECONDS);
     }
 
-    private void handleRecheckResponse(String player, PlayerReference reference, VoteResponse voteResponse, int attempt, String pendingKey) {
-        VoteStatus status = voteResponse == null ? null : voteResponse.getStatus();
-        debug("Recheck " + attempt + " para " + player + " devolvió " + status + ".");
+    private void handleRecheckPending(String player, PlayerReference reference, PendingVotesResponse pending,
+                                      int attempt, String pendingKey, VoteTrace voteTrace) {
+        debug("Recheck " + attempt + " para " + player + " devolvió pending="
+                + (pending == null ? "null" : pending.safePendingVotes().size()));
 
-        if (status == VoteStatus.SUCCESS) {
-            deliverReward(player, reference.getUniqueId(), reference, false);
+        if (pending != null && pending.hasPendingVotes()) {
+            deliverAndAck(player, reference.getUniqueId(), reference, pending.safePendingVotes(), voteTrace);
             finishRechecks(pendingKey);
             return;
         }
 
-        if (status == VoteStatus.ALREADY_VOTED) {
-            // Do not call recordVote here: bumping lastVoteAt without a reward stretches the local cooldown.
-            invalidateVoteCaches(player);
+        if (pending != null && !pending.isPuedeVotarYa()) {
             finishRechecks(pendingKey);
             return;
         }
 
         if (attempt < maxAttempts()) {
-            scheduleAttempt(player, reference, attempt + 1, pendingKey);
+            scheduleAttempt(player, reference, attempt + 1, pendingKey, voteTrace);
             return;
         }
 
@@ -252,178 +345,6 @@ public class RewardService {
         synchronized (pendingRechecks) {
             pendingRechecks.remove(pendingKey);
         }
-    }
-
-    private void handleSuccessResponse(String playerName, String uuid, CSCommandSender sender, PlayerReference reference) {
-        if (!shouldConfirmSuccess(playerName, uuid)) {
-            deliverReward(playerName, uuid, reference, true);
-            return;
-        }
-
-        plugin.getApiClient().invalidateVoteCache(playerName);
-        plugin.getApiClient().validateVote(playerName).thenAccept(confirmed -> {
-            if (!plugin.isActive()) {
-                return;
-            }
-            plugin.runSenderIfActive(sender, resolved -> applyConfirmedSuccess(playerName, uuid, resolved, confirmed));
-        }).exceptionally(error -> {
-            debug("Revalidación de SUCCESS falló para " + playerName + ": " + error.getMessage());
-            if (plugin.isActive()) {
-                plugin.runSenderIfActive(sender, resolved ->
-                        deliverReward(playerName, uuid, PlayerReference.from(resolved), true));
-            }
-            return null;
-        });
-    }
-
-    private void applyConfirmedSuccess(String playerName, String uuid, CSCommandSender sender, VoteResponse confirmed) {
-        PlayerReference reference = PlayerReference.from(sender);
-        if (confirmed == null || confirmed.getStatus() == null) {
-            sendMessage(reference, messages().voteError());
-            return;
-        }
-
-        String web = confirmed.getWeb();
-        debugApiResponse(playerName, confirmed);
-        switch (confirmed.getStatus()) {
-            case NOT_VOTED:
-                if (sendAlreadyRewardedIfRewardedToday(sender)) {
-                    return;
-                }
-                if (isAlreadyRewardedByApi(confirmed)) {
-                    handleAlreadyVoted(playerName, uuid, reference, web);
-                    return;
-                }
-                resolveAmbiguousNotVoted(playerName, uuid, sender, reference, web);
-                break;
-            case SUCCESS:
-                deliverReward(playerName, uuid, reference, true);
-                break;
-            case ALREADY_VOTED:
-                handleAlreadyVoted(playerName, uuid, reference, web);
-                break;
-            default:
-                sendMessage(reference, messages().voteError());
-                break;
-        }
-    }
-
-    /**
-     * API dijo NOT_VOTED. Antes de decir "no has votado", miramos ultimos20votos:
-     * a veces la web ya listó el nick y validateVote aún no lo reconoce.
-     */
-    private void resolveAmbiguousNotVoted(String playerName, String uuid, CSCommandSender sender,
-                                          PlayerReference reference, String web) {
-        final String voteUrl = web == null ? "" : web;
-        plugin.getApiClient().invalidateServerStatsCache();
-        plugin.getApiClient().fetchServerStats().thenAccept(stats -> {
-            if (!plugin.isActive()) {
-                return;
-            }
-            plugin.runSenderIfActive(sender, resolved -> applyStatsForNotVoted(
-                    playerName, uuid, resolved, reference, voteUrl, stats));
-        }).exceptionally(error -> {
-            debug("Stats fallback falló para " + playerName + ": " + error.getMessage());
-            if (plugin.isActive()) {
-                plugin.runSenderIfActive(sender, resolved -> {
-                    resolved.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), voteUrl);
-                    scheduleAutoReward(playerName, PlayerReference.from(resolved));
-                });
-            }
-            return null;
-        });
-    }
-
-    private void applyStatsForNotVoted(String playerName, String uuid, CSCommandSender sender,
-                                       PlayerReference reference, String web, ServerStats stats) {
-        ServerVote listed = findRecentVote(stats, sender.getName());
-        if (listed != null && listed.isRewarded()) {
-            debug("API NOT_VOTED pero stats marca recompensado a " + playerName + ".");
-            handleAlreadyVoted(playerName, uuid, reference, web);
-            return;
-        }
-        if (listed != null) {
-            // Listado sin premio: no mentimos con "no has votado". Seguimos el auto-reward.
-            plugin.log("[Vote] " + playerName + " aparece en ultimos20votos sin recompensar, pero validateVote dijo NOT_VOTED.");
-            sender.sendMessageWithTag(messages().listedButNotClaimable());
-            scheduleAutoReward(playerName, reference);
-            return;
-        }
-        sender.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), web);
-        scheduleAutoReward(playerName, reference);
-    }
-
-    private static ServerVote findRecentVote(ServerStats stats, String nick) {
-        if (stats == null || stats.getLastVotes() == null || nick == null) {
-            return null;
-        }
-        for (ServerVote vote : stats.getLastVotes()) {
-            if (vote.getName() != null && vote.getName().equalsIgnoreCase(nick)) {
-                return vote;
-            }
-        }
-        return null;
-    }
-
-    private void handleAlreadyVoted(String playerName, String uuid, PlayerReference reference, String web) {
-        invalidateVoteCaches(playerName);
-        long nextVoteIn = cachedNextVoteInMillis(playerName, uuid);
-        if (nextVoteIn < 0L) {
-            nextVoteIn = nextVoteInMillis(playerName, uuid);
-        }
-        if (nextVoteIn > 0L) {
-            sendAlreadyRewardedMessage(playerName, uuid, reference);
-            return;
-        }
-
-        // API says already rewarded, but the local UTC+12h window allows a new vote cycle.
-        // Show the vote link instead of "already voted in 0s".
-        debug("API ya recompensado sin cooldown local para " + playerName + "; mostrando enlace de voto.");
-        final String voteUrl = web == null ? "" : web;
-        plugin.runPlayerIfActive(reference, sender ->
-                sender.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), voteUrl));
-        scheduleAutoReward(playerName, reference);
-    }
-
-    private boolean isAlreadyRewardedByApi(VoteResponse voteResponse) {
-        String mensaje = voteResponse == null ? null : voteResponse.getMensaje();
-        if (mensaje == null || mensaje.trim().isEmpty()) {
-            return false;
-        }
-        return mensaje.toLowerCase(Locale.ROOT).contains("ya recompensado");
-    }
-
-    private void debugApiResponse(String playerName, VoteResponse voteResponse) {
-        if (voteResponse == null) {
-            return;
-        }
-        debug("API voto para " + playerName + ": status=" + voteResponse.getStatus()
-                + ", tipovoto=" + voteResponse.getTipovoto()
-                + ", mensaje=" + voteResponse.getMensaje());
-    }
-
-    private boolean shouldConfirmSuccess(String player, String uuid) {
-        long lastVoteAt = playerVoteStore.cachedLastVoteAt(player, uuid);
-        if (lastVoteAt <= 0L) {
-            lastVoteAt = playerVoteStore.lastVoteAt(player, uuid);
-        }
-        if (lastVoteAt <= 0L) {
-            return false;
-        }
-
-        long nextVoteIn = cachedNextVoteInMillis(player, uuid);
-        if (nextVoteIn < 0L) {
-            nextVoteIn = nextVoteInMillis(player, uuid);
-        }
-        if (nextVoteIn > 0L) {
-            return false;
-        }
-
-        String lastRewardDate = playerVoteStore.cachedLastRewardDate(player, uuid);
-        if (lastRewardDate == null || lastRewardDate.isEmpty()) {
-            lastRewardDate = playerVoteStore.lastRewardDate(player, uuid);
-        }
-        return !lastRewardDate.isEmpty() && !currentDate.get().equals(lastRewardDate);
     }
 
     private void recordVote(String player, String uuid) {
@@ -440,11 +361,6 @@ public class RewardService {
         if (voteStreakService != null) {
             voteStreakService.recordVote(player, uuid);
         }
-    }
-
-    private void invalidateVoteCaches(String player) {
-        plugin.getApiClient().invalidateVoteCache(player);
-        plugin.getApiClient().invalidateServerStatsCache();
     }
 
     private boolean enabled() {
@@ -490,6 +406,25 @@ public class RewardService {
         sendMessage(reference, messages().alreadyRewarded(VoteTimeFormatter.formatDuration(timeLeft)));
     }
 
+    String formatSiguienteVoto(String siguienteVoto) {
+        if (siguienteVoto == null || siguienteVoto.trim().isEmpty()) {
+            return VoteTimeFormatter.formatDuration(0L);
+        }
+        try {
+            long target = OffsetDateTime.parse(siguienteVoto.trim()).toInstant().toEpochMilli();
+            long remaining = Math.max(0L, target - clock.get());
+            return VoteTimeFormatter.formatDuration(remaining);
+        } catch (DateTimeParseException ignored) {
+            try {
+                long target = Instant.parse(siguienteVoto.trim()).toEpochMilli();
+                long remaining = Math.max(0L, target - clock.get());
+                return VoteTimeFormatter.formatDuration(remaining);
+            } catch (DateTimeParseException ignoredAgain) {
+                return siguienteVoto;
+            }
+        }
+    }
+
     private PluginMessages messages() {
         return plugin.getPluginMessages();
     }
@@ -507,13 +442,42 @@ public class RewardService {
         return store == null ? new PlayerVoteStore(plugin.getPluginDataFolder(), plugin) : store;
     }
 
+    private static Throwable unwrap(Throwable error) {
+        Throwable current = error;
+        while (current != null && current.getCause() != null && current.getCause() != current) {
+            if (current.getCause() instanceof HttpException) {
+                return current.getCause();
+            }
+            current = current.getCause();
+        }
+        return error;
+    }
+
     private void debug(String message) {
-        if (plugin.getCSConfiguration().getBoolean("autoReward.debug", false) || plugin.isDebug()) {
+        if (plugin.isDebug()) {
             plugin.log("[AutoReward] " + message);
         }
     }
 
     private void sendMessage(PlayerReference reference, String message) {
         plugin.runPlayerIfActive(reference, sender -> sender.sendMessageWithTag(message));
+    }
+
+    private static final class DeliveryResult {
+        private final boolean ok;
+        private final String markResult;
+        private final int commandsOk;
+        private final int commandsTotal;
+
+        private DeliveryResult(boolean ok, String markResult, int commandsOk, int commandsTotal) {
+            this.ok = ok;
+            this.markResult = markResult;
+            this.commandsOk = commandsOk;
+            this.commandsTotal = commandsTotal;
+        }
+
+        private static DeliveryResult failed(String markResult, int commandsOk, int commandsTotal) {
+            return new DeliveryResult(false, markResult, commandsOk, commandsTotal);
+        }
     }
 }

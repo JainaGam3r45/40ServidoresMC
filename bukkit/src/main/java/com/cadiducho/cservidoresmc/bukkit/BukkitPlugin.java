@@ -229,6 +229,28 @@ public class BukkitPlugin extends JavaPlugin implements CSPlugin {
     }
 
     @Override
+    public boolean dispatchCommandResult(String command) {
+        return getServer().dispatchCommand(getServer().getConsoleSender(), command);
+    }
+
+    @Override
+    public String getPlayerIp(String playerName) {
+        if (playerName == null || playerName.trim().isEmpty()) {
+            return "";
+        }
+        Player player = getServer().getPlayerExact(playerName);
+        if (player == null || player.getAddress() == null || player.getAddress().getAddress() == null) {
+            return "";
+        }
+        return player.getAddress().getAddress().getHostAddress();
+    }
+
+    @Override
+    public boolean isPlayerOnline(String playerName) {
+        return playerName != null && getServer().getPlayerExact(playerName) != null;
+    }
+
+    @Override
     public List<CSCommandSender> getOnlinePlayers() {
         List<CSCommandSender> players = new ArrayList<>();
         for (Player player : getServer().getOnlinePlayers()) {

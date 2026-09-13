@@ -66,7 +66,7 @@ public interface CSPlugin {
      * @return la versión de la configuración
      */
     default int configVersion() {
-        return 8;
+        return 9;
     }
 
     /**
@@ -174,6 +174,37 @@ public interface CSPlugin {
      * @param command El comando deseado
      */
     void dispatchCommand(String command);
+
+    /**
+     * Run a console command on the current platform thread and return success.
+     * Callers that need a reliable ack (v3) should invoke this from a global task.
+     */
+    default boolean dispatchCommandResult(String command) {
+        dispatchCommand(command);
+        return true;
+    }
+
+    /**
+     * Clear player IP for v3 ack, or empty if unknown / offline.
+     */
+    default String getPlayerIp(String playerName) {
+        return "";
+    }
+
+    /**
+     * Whether the named player is online right now.
+     */
+    default boolean isPlayerOnline(String playerName) {
+        if (playerName == null || playerName.isEmpty()) {
+            return false;
+        }
+        for (CSCommandSender online : getOnlinePlayers()) {
+            if (online != null && playerName.equalsIgnoreCase(online.getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     /**
      * Obtener jugadores conectados como command senders genéricos

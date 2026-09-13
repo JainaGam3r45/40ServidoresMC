@@ -1,16 +1,17 @@
 # 40ServidoresMC configuration
 # Documentation: https://github.com/JainaGam3r45/40ServidoresMC
 
-configVersion: 8
+configVersion: 9
+# Extra console logging (HTTP, auto-reward, /voto40 VoteTrace). Keep off in production.
 debug: false
 
 api:
-  # Your 40ServidoresMC server API key.
+  # Your 40ServidoresMC server API key (also used as Bearer token for vote v3).
   # Keep this value private.
   key: "CHANGE_ME"
 
   # HTTP timeout in milliseconds.
-  readTimeout: 5000
+  readTimeout: 10000
   connectTimeout: 5000
 
   # Retry failed transient requests such as timeouts and 5xx responses.
@@ -41,6 +42,8 @@ messages:
     listedButNotClaimable: "&eYour vote is registered but cannot be claimed yet. Try again in a few minutes or ask an admin."
     error: "&7An error occurred. Try again later or contact an administrator."
     rewardSaveFailed: "&cCould not save your rewarded vote. Contact an administrator."
+    deliveryFailed: "&cCould not deliver the reward. Run /voto40 again in a few minutes."
+    ackFailed: "&eReward delivered, but confirmation with the website failed. The next /voto40 will retry confirmation."
 
   stats:
     exception: "&cAn exception occurred. Check the console or contact an administrator."
@@ -139,7 +142,6 @@ autoReward:
     - 30
     - 60
   maxAttempts: 3
-  debug: false
 
 voteReminder:
   # Notify players when their local vote cooldown has expired.

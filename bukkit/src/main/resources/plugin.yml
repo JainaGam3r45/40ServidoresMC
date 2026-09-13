@@ -1,6 +1,6 @@
 name: 40ServidoresMC
 main: com.cadiducho.cservidoresmc.bukkit.BukkitPlugin
-version: 3.4.1
+version: 3.5.0
 author: Cadiducho
 api-version: 1.13
 folia-supported: true
@@ -51,4 +51,7 @@ permissions:
         default: op
     40servidores.test:
         description: Permite probar las recompensas configuradas
+        default: op
+    40servidores.votedebug:
+        description: Permite ver la traza detallada de /voto40 en el chat cuando debug está activo
         default: op

@@ -44,7 +44,7 @@ import java.util.concurrent.Executor;
 @Plugin(id = "cservidoresmc", name = "40ServidoresMC", version = SpongePlugin.PLUGIN_VERSION)
 public class SpongePlugin implements CSPlugin {
 
-    public static final String PLUGIN_VERSION = "3.4.1";
+    public static final String PLUGIN_VERSION = "3.5.0";
     @Inject private Logger logger;
     @Inject private Game game;
 
@@ -274,6 +274,26 @@ public class SpongePlugin implements CSPlugin {
     @Override
     public void dispatchCommand(String command) {
         getScheduler().runGlobal(() -> Sponge.getCommandManager().process(Sponge.getServer().getConsole(), command));
+    }
+
+    @Override
+    public boolean dispatchCommandResult(String command) {
+        return Sponge.getCommandManager().process(Sponge.getServer().getConsole(), command).getSuccessCount().orElse(0) > 0;
+    }
+
+    @Override
+    public String getPlayerIp(String playerName) {
+        if (playerName == null || playerName.trim().isEmpty()) {
+            return "";
+        }
+        return Sponge.getServer().getPlayer(playerName)
+                .map(player -> player.getConnection().getAddress().getAddress().getHostAddress())
+                .orElse("");
+    }
+
+    @Override
+    public boolean isPlayerOnline(String playerName) {
+        return playerName != null && Sponge.getServer().getPlayer(playerName).isPresent();
     }
 
     @Override
