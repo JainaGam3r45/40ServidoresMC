@@ -33,14 +33,15 @@ Claves principales:
 
 | Sección | Uso |
 | --- | --- |
-| `api.key` | Clave privada del servidor en 40ServidoresMC. |
+| `debug` | Registro extra en consola (HTTP, auto-recompensa y traza `[VoteTrace/...]` de `/voto40`). Apagado por defecto. |
+| `api.key` | Clave privada del servidor. También se envía como `Authorization: Bearer` en el reclamo v3. |
 | `api.readTimeout` / `api.connectTimeout` | Timeouts HTTP en milisegundos. |
 | `messages.prefix` | Prefijo de los mensajes del plugin. |
 | `messages.voteClaim` | Mensaje al entregar una recompensa de voto. |
 | `messages.alreadyRewarded` | Mensaje cuando el jugador ya recibió la recompensa. Usa `%time%`. |
 | `messages.commands.*` | Errores genéricos de comandos (`noPermission`, `onlyPlayer`, `unexpectedError`, `cooldown`). |
 | `messages.apiException` | Error genérico de la API en voto y estadísticas. |
-| `messages.vote.*` | Mensajes del flujo de voto (`checking`, `notVotedToday`, `listedButNotClaimable`, `error`, `rewardSaveFailed`). |
+| `messages.vote.*` | Mensajes del flujo de voto (`checking`, `notVotedToday`, `error`, `rewardSaveFailed`, `deliveryFailed`, `ackFailed`). |
 | `messages.stats.lines` | Lista de líneas de `/stats40`. Placeholders: `%server%`, `%rank%`, `%votesToday%`, `%rewardedToday%`, `%votesWeek%`, `%rewardedWeek%`, `%lastVotes%`. |
 | `messages.streak.own.lines` / `admin.lines` / `usage.lines` | Listas de líneas de `/streak40`. |
 | `messages.streak.formats.*` | Textos para fechas y disponibilidad de voto en rachas. |
@@ -50,8 +51,21 @@ Claves principales:
 | `broadcast.enabled` / `broadcast.message` | Activa y configura el anuncio global de recompensa. |
 | `rewards.commands` | Comandos ejecutados desde consola al premiar un voto. |
 | `streakRewards` | Premios por hitos de racha. |
-| `autoReward` | Reintentos automáticos tras votar en la web. |
+| `autoReward` | Reintentos automáticos tras mostrar el enlace (polling de votos pendientes v3). |
 | `voteReminder` | Recordatorios locales para volver a votar. |
+
+Si un jugador vota en la web y `/voto40` no se comporta bien, pon `debug: true`, haz `/reload40`, reproduce el caso y copia las líneas `[VoteTrace/...]` de la consola (o del chat si tienes el permiso `40servidores.votedebug`). No compartas `api.key`. Cuando termines, vuelve a poner `debug: false`.
+
+API de votos (v3)
+------------
+El reclamo con `/voto40` usa el protocolo v3 de 40ServidoresMC. La URL base está fija en el código (`https://www.40servidoresmc.es`), no en `config.yml`:
+
+1. `GET /api/vote/v3/pending?nick=...` con `Authorization: Bearer <api.key>`
+2. Si hay votos pendientes: se entrega el premio local y luego `POST /api/vote/v3/ack`
+3. Si no hay pendientes y `puede_votar_ya=true`: se muestra el enlace `https://www.40servidoresmc.es/`
+4. Si no hay pendientes y `puede_votar_ya=false`: mensaje de ya recompensado con `siguiente_voto`
+
+Las estadísticas (`/stats40`) siguen usando el endpoint legacy `api2.php?estadisticas=1` (no hay equivalente v3).
 
 Cooldown de voto (regla oficial)
 ------------
@@ -62,21 +76,16 @@ La web de 40ServidoresMC permite un nuevo voto cuando se cumplen **las dos** con
 
 En la práctica el plugin calcula el próximo momento válido como el **más tardío** entre “último voto + 12 h” y “medianoche UTC del día siguiente”. Por eso a veces el tiempo restante se acerca a ~24 h (por ejemplo si votaste temprano en el día UTC): no es un bug ni una ventana fija de 24 horas; es el máximo de esas dos condiciones.
 
-El plugin usa esa misma regla para `%time%` en `messages.alreadyRewarded`, recordatorios y placeholders de disponibilidad.
+El plugin usa esa misma regla para `%time%` en `messages.alreadyRewarded`, recordatorios y placeholders de disponibilidad. En v3, la web también puede devolver `siguiente_voto` en la respuesta pending.
 
 ### Qué ve el jugador con `/voto40`
 
 | Situación | Qué debería ver |
 | --- | --- |
-| Aún no ha votado en la web (o el ciclo web ya admite otro voto) | Enlace de voto (`messages.vote.notVotedToday` + URL de la API). |
-| `validateVote` dice que no votó, pero aparece en `ultimos20votos` sin recompensar | Aviso `messages.vote.listedButNotClaimable` (y el auto-reward sigue reintentando). |
-| Votó y el plugin puede entregar el premio | Recompensa (`messages.voteClaim`) y comandos de `rewards.commands`. |
-| Ya reclamó el premio y la ventana local UTC+12 h **sigue activa** | Mensaje “ya recompensado” / “ya votaste” con `%time%` (**sin** enlace). Es el comportamiento esperado mientras el cooldown local no caduca. |
-| La API dice que el voto ya está recompensado, pero la ventana local **ya caducó** | Otra vez el **enlace** de voto, no un “ya votaste… en 0s”. Así no se queda bloqueado sin forma de seguir el ciclo. |
-
-Resumen rápido: **cooldown local activo = mensaje sin enlace**; **cooldown local terminado = enlace** (aunque la API aún diga “ya recompensado”). Si pasan horas y solo ves “ya votaste” sin enlace, casi siempre es porque la regla UTC + 12 h todavía no liberó el ciclo local.
-
-La API `api2.php` puede devolver, además de `status` y `web`, los campos `mensaje` y `tipovoto`. Un `status: 0` no siempre significa “no has votado”: si el `mensaje` indica que el voto ya fue recompensado, el plugin lo trata como reclamado y aplica la tabla de arriba.
+| Pending vacío y `puede_votar_ya=true` | Enlace de voto (`messages.vote.notVotedToday` + web fija). |
+| Pending con votos | Recompensa (`messages.voteClaim`), comandos de `rewards.commands`, y ack a la web. |
+| Pending vacío y `puede_votar_ya=false` | Mensaje “ya recompensado” con tiempo desde `siguiente_voto` (o cooldown local). |
+| Premio entregado pero el ack falla | Mensaje de ack fallido; el siguiente `/voto40` reintenta el ack sin volver a dar el premio. |
 
 Las claves antiguas como `clave`, `mensaje`, `tag` y `comandosCustom` siguen funcionando como fallback, pero el migrador las moverá a la estructura nueva para evitar confusión. Si falta una clave nueva de `messages.*`, el plugin usa el texto en español embebido en el código como respaldo. Las configs v9 con claves por línea (`messages.metrics.header`, etc.) se convierten automáticamente a listas si falta `messages.*.lines`.
 
@@ -98,7 +107,7 @@ Estos placeholders los resuelve el propio plugin al enviar mensajes o ejecutar c
 | `%player%` | `rewards.commands`, `broadcast.message`, `streakRewards`, `messages.streak.*` | Nombre del jugador premiado o consultado. |
 | `%time%` | `messages.alreadyRewarded`, `messages.commands.cooldown`, `messages.streak.formats.canVoteIn` | Tiempo restante hasta poder volver a votar o usar un comando. |
 | `%command%` | `messages.commands.cooldown` | Etiqueta del comando en cooldown. |
-| `%web%` | Prefijo de enlace cuando el jugador no ha votado (se concatena con la URL de la API). | Texto antes del enlace clicable. |
+| `%web%` | Prefijo de enlace cuando el jugador no ha votado (se concatena con la URL fija de la web). | Texto antes del enlace clicable. |
 | `%server%` / `%rank%` | `messages.stats.lines` | Nombre del servidor y posición en el ranking. |
 | `%votesToday%` / `%rewardedToday%` / `%votesWeek%` / `%rewardedWeek%` | `messages.stats.lines` | Contadores de votos. |
 | `%lastVotes%` | `messages.stats.lines` | Lista formateada de últimos votos. Se omite la línea si no hay datos. |
