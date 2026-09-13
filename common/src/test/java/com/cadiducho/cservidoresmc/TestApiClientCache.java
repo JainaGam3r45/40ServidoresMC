@@ -6,16 +6,17 @@ import com.cadiducho.cservidoresmc.config.CSConfiguration;
 import com.cadiducho.cservidoresmc.http.HttpConfig;
 import com.cadiducho.cservidoresmc.http.HttpLogger;
 import com.cadiducho.cservidoresmc.http.HttpRequester;
+import com.cadiducho.cservidoresmc.model.AckResponse;
+import com.cadiducho.cservidoresmc.model.PendingVotesResponse;
 import com.cadiducho.cservidoresmc.model.ServerStats;
-import com.cadiducho.cservidoresmc.model.VoteResponse;
-import com.cadiducho.cservidoresmc.model.VoteStatus;
 import com.google.gson.Gson;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
 import java.io.File;
+import java.io.IOException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,9 +24,11 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestApiClientCache {
 
@@ -84,40 +87,64 @@ public class TestApiClientCache {
     }
 
     @Test
-    void notVotedResponsesUseShortNegativeCache() {
+    void pendingVotesAreNotCached() {
         ManualClock clock = new ManualClock();
         CountingRequester requester = new CountingRequester();
-        requester.addResponse(voteJson("0"));
+        requester.addResponse(pendingJson(true, 0));
+        requester.addResponse(pendingJson(true, 0));
         ApiClient apiClient = apiClient(requester, clock);
 
-        VoteResponse firstVote = apiClient.validateVote("Cadiducho").join();
-        VoteResponse cachedVote = apiClient.validateVote("cadiducho").join();
+        PendingVotesResponse first = apiClient.fetchPendingVotes("Cadiducho").join();
+        PendingVotesResponse second = apiClient.fetchPendingVotes("cadiducho").join();
 
-        assertSame(firstVote, cachedVote);
-        assertEquals(VoteStatus.NOT_VOTED, cachedVote.getStatus());
-        assertEquals(1, requester.requests());
+        assertTrue(first.isPuedeVotarYa());
+        assertTrue(second.isPuedeVotarYa());
+        assertEquals(2, requester.requests());
     }
 
     @Test
-    void successfulVotesAreNotCachedAndInvalidateStats() {
+    void pendingWithVotesInvalidatesStatsCache() {
         ManualClock clock = new ManualClock();
         CountingRequester requester = new CountingRequester();
         requester.addResponse(serverStatsJson("Servidor", 1));
-        requester.addResponse(voteJson("1"));
-        requester.addResponse(voteJson("1"));
+        requester.addResponse(pendingJson(false, 1));
         requester.addResponse(serverStatsJson("Servidor", 2));
         ApiClient apiClient = apiClient(requester, clock);
 
         ServerStats cachedStats = apiClient.fetchServerStats().join();
-        VoteResponse firstVote = apiClient.validateVote("Cadiducho").join();
-        VoteResponse secondVote = apiClient.validateVote("Cadiducho").join();
+        PendingVotesResponse pending = apiClient.fetchPendingVotes("Cadiducho").join();
+        assertEquals(1, pending.safePendingVotes().size());
+
+        apiClient.invalidateServerStatsCache();
         ServerStats refreshedStats = apiClient.fetchServerStats().join();
 
-        assertEquals(VoteStatus.SUCCESS, firstVote.getStatus());
-        assertEquals(VoteStatus.SUCCESS, secondVote.getStatus());
         assertNotSame(cachedStats, refreshedStats);
         assertEquals(2, refreshedStats.getPosition());
-        assertEquals(4, requester.requests());
+        assertEquals(3, requester.requests());
+    }
+
+    @Test
+    void sendAckPostsToV3Endpoint() {
+        ManualClock clock = new ManualClock();
+        CountingRequester requester = new CountingRequester();
+        requester.addResponse(ackJson());
+        ApiClient apiClient = apiClient(requester, clock);
+
+        AckResponse ack = apiClient.sendAck(Collections.singletonList(254411L), "Cadiducho", true, "203.0.113.10").join();
+
+        assertTrue(ack.isEntregado());
+        assertEquals(1, requester.requests());
+        assertTrue(requester.lastUrl.contains("/api/vote/v3/ack"));
+        assertEquals("POST", requester.lastMethod);
+        assertTrue(requester.lastAuthorization != null && requester.lastAuthorization.startsWith("Bearer "));
+    }
+
+    @Test
+    void truncatesLegacyApi2UrlToBase() {
+        assertEquals("https://www.40servidoresmc.es",
+                ApiClient.truncateToApiBase("https://www.40servidoresmc.es/api2.php?clave="));
+        assertEquals("http://localhost:8080",
+                ApiClient.truncateToApiBase("http://localhost:8080/api2.php?clave=abc"));
     }
 
     @Test
@@ -148,18 +175,36 @@ public class TestApiClientCache {
     }
 
     @Test
-    void cachedVoteChecksAreNotCountedTwice() {
+    void pendingVoteChecksAreCountedEachTime() {
         ManualClock clock = new ManualClock();
         CountingRequester requester = new CountingRequester();
         TestPlugin plugin = new TestPlugin();
-        requester.addResponse(voteJson("0"));
+        requester.addResponse(pendingJson(true, 0));
+        requester.addResponse(pendingJson(true, 0));
         ApiClient apiClient = new ApiClient(plugin, new Gson(), requester, "http://localhost/api?clave=", clock);
 
-        apiClient.validateVote("Cadiducho").join();
-        apiClient.validateVote("cadiducho").join();
+        apiClient.fetchPendingVotes("Cadiducho").join();
+        apiClient.fetchPendingVotes("cadiducho").join();
 
-        assertEquals(1, plugin.getPluginMetrics().getVoteChecks());
-        assertEquals(1, plugin.getPluginMetrics().getApiRequests());
+        assertEquals(2, plugin.getPluginMetrics().getVoteChecks());
+        assertEquals(2, plugin.getPluginMetrics().getApiRequests());
+    }
+
+    @Test
+    void retryPendingAcksResendsStoredIds() {
+        ManualClock clock = new ManualClock();
+        CountingRequester requester = new CountingRequester();
+        requester.addResponse(ackJson());
+        ApiClient apiClient = apiClient(requester, clock);
+
+        apiClient.addPendingAck("Cadiducho", Collections.singletonList(99L));
+        assertFalse(apiClient.peekPendingAcks("Cadiducho").isEmpty());
+
+        AckResponse ack = apiClient.retryPendingAcks("Cadiducho").join();
+
+        assertTrue(ack.isEntregado());
+        assertTrue(apiClient.peekPendingAcks("Cadiducho").isEmpty());
+        assertEquals(1, requester.requests());
     }
 
     private ApiClient apiClient(CountingRequester requester, ManualClock clock) {
@@ -172,8 +217,23 @@ public class TestApiClientCache {
                 + "\"ultimos20votos\":[]}";
     }
 
-    private static String voteJson(String status) {
-        return "{\"web\":\"https://40servidoresmc.es\",\"status\":\"" + status + "\"}";
+    private static String pendingJson(boolean puedeVotarYa, int voteCount) {
+        StringBuilder votes = new StringBuilder("[");
+        for (int i = 0; i < voteCount; i++) {
+            if (i > 0) {
+                votes.append(',');
+            }
+            votes.append("{\"id\":").append(100 + i).append(",\"origen\":\"web\"}");
+        }
+        votes.append(']');
+        return "{\"api_version\":3,\"jugador\":\"Cadiducho\",\"votos_pendientes\":" + votes
+                + ",\"reserva_segundos\":300,\"puede_votar_ya\":" + puedeVotarYa
+                + ",\"siguiente_voto\":null}";
+    }
+
+    private static String ackJson() {
+        return "{\"api_version\":3,\"confirmados\":[254411],\"ya_confirmados\":[],\"liberados\":[],"
+                + "\"desconocidos\":[],\"entregado\":true}";
     }
 
     private static class ManualClock implements Clock {
@@ -194,10 +254,16 @@ public class TestApiClientCache {
 
         private final AtomicInteger requests = new AtomicInteger();
         private final List<String> responses = new ArrayList<>();
+        private String lastUrl = "";
+        private String lastMethod = "";
+        private String lastAuthorization;
 
         @Override
         public String request(URL url, String method, String requestName, HttpConfig config, HttpLogger logger) throws IOException {
             int request = requests.incrementAndGet();
+            lastUrl = url.toString();
+            lastMethod = method;
+            lastAuthorization = config == null ? null : config.getAuthorization();
             if (responses.size() < request) {
                 throw new IOException("No fake response configured for request " + request + ".");
             }
@@ -284,6 +350,7 @@ public class TestApiClientCache {
         private TestConfiguration(CSPlugin plugin) {
             this.plugin = plugin;
             strings.put("clave", "key");
+            strings.put("api.key", "key");
             booleans.put("debug", false);
             booleans.put("cache.enabled", true);
             ints.put("cache.serverStatsTtlSeconds", 60);

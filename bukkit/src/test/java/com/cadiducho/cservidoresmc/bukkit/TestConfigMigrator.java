@@ -56,7 +56,7 @@ public class TestConfigMigrator {
         assertTrue(migrated.contains("# 40ServidoresMC configuration"));
         assertFalse(migrated.contains("# Comentario personalizado"));
         assertTrue(migrated.contains("debug: true"));
-        assertTrue(migrated.contains("configVersion: 8"));
+        assertTrue(migrated.contains("configVersion: 9"));
         assertTrue(migrated.contains("api:\n"));
         assertTrue(migrated.contains("  key: \"personalizada\""));
         assertTrue(migrated.contains("  readTimeout: 7000"));
@@ -96,7 +96,7 @@ public class TestConfigMigrator {
     @Test
     void preservesCustomApiKey() throws Exception {
         File config = writeConfig(
-                "configVersion: 8\n" +
+                "configVersion: 9\n" +
                         "api:\n" +
                         "  key: \"server-api-key\"\n"
         );
@@ -105,7 +105,7 @@ public class TestConfigMigrator {
 
         String migrated = normalize(read(config));
         assertTrue(migrated.contains("  key: \"server-api-key\""));
-        assertTrue(migrated.contains("  readTimeout: 5000"));
+        assertTrue(migrated.contains("  readTimeout: 10000"));
     }
 
     @Test
@@ -183,7 +183,7 @@ public class TestConfigMigrator {
         new ConfigMigrator(new TestPlugin(tempDir.toFile()), config).migrate();
 
         String migrated = normalize(read(config));
-        assertTrue(migrated.contains("configVersion: 8"));
+        assertTrue(migrated.contains("configVersion: 9"));
         assertFalse(migrated.contains("configVersion: 3"));
         assertTrue(migrated.contains("  key: \"server-key\""));
     }
@@ -199,7 +199,7 @@ public class TestConfigMigrator {
         new ConfigMigrator(new TestPlugin(tempDir.toFile()), config).migrate();
 
         String migrated = normalize(read(config));
-        assertTrue(migrated.contains("configVersion: 8"));
+        assertTrue(migrated.contains("configVersion: 9"));
         assertFalse(migrated.contains("configVer:"));
         assertFalse(migrated.contains("configVersion: 3"));
     }
