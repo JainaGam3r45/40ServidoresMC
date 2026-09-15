@@ -28,8 +28,10 @@ import java.util.function.Supplier;
 public class RewardService {
 
     private static final List<String> DEFAULT_RECHECK_DELAYS = Arrays.asList("10", "30", "60");
-    /** Website link shown when the player still needs to vote. Hardcoded on purpose. */
-    public static final String VOTE_URL = "https://www.40servidoresmc.es/";
+    /** Production site host. Vote pages are built as {@code /{slug}/votar}. */
+    public static final String SITE_BASE = "https://www.40servidoresmc.es";
+    /** Fallback when the pending response has no server slug. */
+    public static final String VOTE_URL = SITE_BASE + "/";
 
     private final CSPlugin plugin;
     private final PlayerVoteStore playerVoteStore;
@@ -84,8 +86,9 @@ public class RewardService {
 
         if (pending.isPuedeVotarYa()) {
             voteTrace.branch("show_link");
+            final String voteUrl = voteUrlFor(pending);
             plugin.runSenderIfActive(sender, resolved ->
-                    resolved.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), VOTE_URL));
+                    resolved.sendNotVotedTodayLink(messages().notVotedTodayPrefix(), voteUrl));
             scheduleAutoReward(playerName, reference, voteTrace);
             voteTrace.done();
             return;
@@ -423,6 +426,19 @@ public class RewardService {
                 return siguienteVoto;
             }
         }
+    }
+
+    /**
+     * Direct vote page for this server when the pending payload includes a slug.
+     */
+    static String voteUrlFor(PendingVotesResponse pending) {
+        if (pending != null && pending.getServidor() != null) {
+            String slug = pending.getServidor().getSlug();
+            if (slug != null && !slug.trim().isEmpty()) {
+                return SITE_BASE + "/" + slug.trim() + "/votar";
+            }
+        }
+        return VOTE_URL;
     }
 
     private PluginMessages messages() {

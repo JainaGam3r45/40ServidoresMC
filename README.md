@@ -62,7 +62,7 @@ El reclamo con `/voto40` usa el protocolo v3 de 40ServidoresMC. La URL base est�
 
 1. `GET /api/vote/v3/pending?nick=...` con `Authorization: Bearer <api.key>`
 2. Si hay votos pendientes: se entrega el premio local y luego `POST /api/vote/v3/ack`
-3. Si no hay pendientes y `puede_votar_ya=true`: se muestra el enlace `https://www.40servidoresmc.es/`
+3. Si no hay pendientes y `puede_votar_ya=true`: se muestra el enlace directo `https://www.40servidoresmc.es/{slug}/votar` (el `slug` viene en la respuesta pending).
 4. Si no hay pendientes y `puede_votar_ya=false`: mensaje de ya recompensado con `siguiente_voto`
 
 Las estadísticas (`/stats40`) siguen usando el endpoint legacy `api2.php?estadisticas=1` (no hay equivalente v3).
@@ -82,7 +82,7 @@ El plugin usa esa misma regla para `%time%` en `messages.alreadyRewarded`, recor
 
 | Situación | Qué debería ver |
 | --- | --- |
-| Pending vacío y `puede_votar_ya=true` | Enlace de voto (`messages.vote.notVotedToday` + web fija). |
+| Pending vacío y `puede_votar_ya=true` | Enlace de voto (`messages.vote.notVotedToday` + `/{slug}/votar`). |
 | Pending con votos | Recompensa (`messages.voteClaim`), comandos de `rewards.commands`, y ack a la web. |
 | Pending vacío y `puede_votar_ya=false` | Mensaje “ya recompensado” con tiempo desde `siguiente_voto` (o cooldown local). |
 | Premio entregado pero el ack falla | Mensaje de ack fallido; el siguiente `/voto40` reintenta el ack sin volver a dar el premio. |
@@ -107,7 +107,7 @@ Estos placeholders los resuelve el propio plugin al enviar mensajes o ejecutar c
 | `%player%` | `rewards.commands`, `broadcast.message`, `streakRewards`, `messages.streak.*` | Nombre del jugador premiado o consultado. |
 | `%time%` | `messages.alreadyRewarded`, `messages.commands.cooldown`, `messages.streak.formats.canVoteIn` | Tiempo restante hasta poder volver a votar o usar un comando. |
 | `%command%` | `messages.commands.cooldown` | Etiqueta del comando en cooldown. |
-| `%web%` | Prefijo de enlace cuando el jugador no ha votado (se concatena con la URL fija de la web). | Texto antes del enlace clicable. |
+| `%web%` | Prefijo de enlace cuando el jugador no ha votado (se concatena con la URL de voto del servidor). | Texto antes del enlace clicable. |
 | `%server%` / `%rank%` | `messages.stats.lines` | Nombre del servidor y posición en el ranking. |
 | `%votesToday%` / `%rewardedToday%` / `%votesWeek%` / `%rewardedWeek%` | `messages.stats.lines` | Contadores de votos. |
 | `%lastVotes%` | `messages.stats.lines` | Lista formateada de últimos votos. Se omite la línea si no hay datos. |

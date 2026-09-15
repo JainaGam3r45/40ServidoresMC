@@ -56,7 +56,7 @@ public class TestRewardService {
     }
 
     @Test
-    void emptyPendingAndPuedeVotarShowsVoteLink() {
+    void emptyPendingAndPuedeVotarShowsServerVoteLink() {
         TestPlugin plugin = new TestPlugin(tempDir);
         RewardService rewardService = rewardService(plugin, plugin.scheduler);
         plugin.setRewardService(rewardService);
@@ -64,11 +64,26 @@ public class TestRewardService {
         TestSender sender = new TestSender("Cadiducho");
         plugin.connect(sender);
 
-        rewardService.handlePendingVotes(sender.getName(), sender, emptyPending(true, null), VoteTrace.noop());
+        rewardService.handlePendingVotes(sender.getName(), sender, emptyPending(true, null, "mi-servidor"), VoteTrace.noop());
 
-        assertTrue(sender.messages.stream().anyMatch(message -> message.contains(RewardService.VOTE_URL)));
+        assertTrue(sender.messages.stream().anyMatch(message ->
+                message.contains("https://www.40servidoresmc.es/mi-servidor/votar")));
         assertEquals(0, plugin.commands.size());
         assertTrue(rewardService.hasPendingReward("Cadiducho"));
+    }
+
+    @Test
+    void emptyPendingWithoutSlugFallsBackToSiteHome() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        RewardService rewardService = rewardService(plugin, plugin.scheduler);
+        plugin.setRewardService(rewardService);
+        plugin.setApiClient(new FakeApiClient(plugin));
+        TestSender sender = new TestSender("Cadiducho");
+        plugin.connect(sender);
+
+        rewardService.handlePendingVotes(sender.getName(), sender, emptyPending(true, null, null), VoteTrace.noop());
+
+        assertTrue(sender.messages.stream().anyMatch(message -> message.contains(RewardService.VOTE_URL)));
     }
 
     @Test
@@ -269,12 +284,21 @@ public class TestRewardService {
     }
 
     private static PendingVotesResponse emptyPending(boolean puedeVotarYa, String siguienteVoto) {
+        return emptyPending(puedeVotarYa, siguienteVoto, "mi-servidor");
+    }
+
+    private static PendingVotesResponse emptyPending(boolean puedeVotarYa, String siguienteVoto, String slug) {
         PendingVotesResponse response = new PendingVotesResponse();
         response.setApiVersion(3);
         response.setJugador("Cadiducho");
         response.setVotosPendientes(Collections.<PendingVote>emptyList());
         response.setPuedeVotarYa(puedeVotarYa);
         response.setSiguienteVoto(siguienteVoto);
+        if (slug != null) {
+            PendingVotesResponse.ServerInfo server = new PendingVotesResponse.ServerInfo();
+            server.setSlug(slug);
+            response.setServidor(server);
+        }
         return response;
     }
 
