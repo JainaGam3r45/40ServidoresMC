@@ -38,5 +38,8 @@ public class PendingVotesResponse {
         private String nombre;
         private String slug;
         private int puesto;
+        private String url;
+        @SerializedName("url_votar")
+        private String urlVotar;
     }
 }

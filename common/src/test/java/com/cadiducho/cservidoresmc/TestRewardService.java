@@ -266,14 +266,99 @@ public class TestRewardService {
                 message.contains("No se pudo entregar el premio")));
     }
 
+    @Test
+    void failedCommandsStillAckTrueWithoutDeliveryFailedMessage() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        plugin.failCommands = true;
+        RewardService rewardService = rewardService(plugin, plugin.scheduler);
+        plugin.setRewardService(rewardService);
+        FakeApiClient api = new FakeApiClient(plugin);
+        plugin.setApiClient(api);
+        TestSender sender = new TestSender("Cadiducho");
+        plugin.connect(sender);
+
+        rewardService.handlePendingVotes(sender.getName(), sender, pendingWithVote(8L), VoteTrace.noop());
+
+        assertEquals(1, plugin.commands.size());
+        assertEquals(1, api.ackCalls);
+        assertTrue(api.lastAckDelivered);
+        assertTrue(sender.messages.stream().anyMatch(message -> message.contains("Aqui tienes tu premio")));
+        assertFalse(sender.messages.stream().anyMatch(message ->
+                message.contains("No se pudo entregar el premio")
+                        || message.contains("Could not deliver")));
+    }
+
+    @Test
+    void duplicatePendingDeliveryAcksTrueWithoutDeliveryFailedMessage() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        RewardService rewardService = rewardService(plugin, plugin.scheduler);
+        plugin.setRewardService(rewardService);
+        FakeApiClient api = new FakeApiClient(plugin);
+        plugin.setApiClient(api);
+        TestSender sender = new TestSender("Cadiducho");
+        plugin.connect(sender);
+
+        rewardService.handlePendingVotes(sender.getName(), sender, pendingWithVote(11L), VoteTrace.noop());
+        sender.messages.clear();
+
+        rewardService.handlePendingVotes(sender.getName(), sender, pendingWithVote(11L), VoteTrace.noop());
+
+        assertEquals(1, plugin.getPluginMetrics().getRewardsDelivered());
+        assertEquals(2, api.ackCalls);
+        assertTrue(api.lastAckDelivered);
+        assertTrue(sender.messages.stream().anyMatch(message ->
+                message.contains("Ya has votado y recibido tu recompensa")));
+        assertFalse(sender.messages.stream().anyMatch(message ->
+                message.contains("No se pudo entregar el premio")
+                        || message.contains("Could not deliver")));
+    }
+
+    @Test
+    void oldPendingUsesVoteFechaSoEarlyExitDoesNotBlockSameDayClaim() {
+        TestPlugin plugin = new TestPlugin(tempDir);
+        long claimNow = java.time.Instant.parse("2026-09-18T15:00:00Z").toEpochMilli();
+        AtomicLong clock = new AtomicLong(claimNow);
+        PlayerVoteStore store = new PlayerVoteStore(tempDir, plugin);
+        RewardService rewardService = new RewardService(plugin, store, plugin.scheduler, () -> "2026-09-18", clock::get);
+        plugin.setRewardService(rewardService);
+        FakeApiClient api = new FakeApiClient(plugin);
+        plugin.setApiClient(api);
+        TestSender sender = new TestSender("Cadiducho");
+        plugin.connect(sender);
+
+        long voteAt = java.time.OffsetDateTime.parse("2026-09-16T21:52:55+02:00").toInstant().toEpochMilli();
+        rewardService.handlePendingVotes(sender.getName(), sender,
+                pendingWithVote(393619L, "2026-09-16T21:52:55+02:00", "2026-09-16"), VoteTrace.noop());
+
+        assertEquals(voteAt, store.lastVoteAt(sender.getName(), PLAYER_UUID));
+        assertTrue(api.lastAckDelivered);
+        sender.messages.clear();
+        assertFalse(rewardService.sendAlreadyRewardedIfActive(sender));
+        assertTrue(sender.messages.isEmpty());
+    }
+
+    @Test
+    void voteUrlPrefersApiUrlVotar() {
+        PendingVotesResponse pending = emptyPending(true, null, "crystalmc");
+        pending.getServidor().setUrlVotar("https://www.40servidoresmc.es/crystalmc/votar");
+
+        assertEquals("https://www.40servidoresmc.es/crystalmc/votar", RewardService.voteUrlFor(pending));
+    }
+
     private RewardService rewardService(TestPlugin plugin, TestScheduler scheduler) {
         return new RewardService(plugin, new File(tempDir, "rewarded-votes.properties"), scheduler, () -> "2026-06-18");
     }
 
     private static PendingVotesResponse pendingWithVote(long id) {
+        return pendingWithVote(id, null, null);
+    }
+
+    private static PendingVotesResponse pendingWithVote(long id, String fecha, String dia) {
         PendingVote vote = new PendingVote();
         vote.setId(id);
         vote.setOrigen("web");
+        vote.setFecha(fecha);
+        vote.setDia(dia);
         PendingVotesResponse response = new PendingVotesResponse();
         response.setApiVersion(3);
         response.setJugador("Cadiducho");
@@ -346,6 +431,7 @@ public class TestRewardService {
         private final List<CSCommandSender> online = new ArrayList<>();
         private final List<String> commands = new ArrayList<>();
         private final List<String> broadcasts = new ArrayList<>();
+        private boolean failCommands;
         private ApiClient apiClient;
         private RewardService rewardService;
         private VoteStreakService voteStreakService;
@@ -436,7 +522,7 @@ public class TestRewardService {
         @Override
         public boolean dispatchCommandResult(String command) {
             commands.add(command);
-            return true;
+            return !failCommands;
         }
 
         @Override

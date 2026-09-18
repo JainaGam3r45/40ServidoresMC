@@ -293,7 +293,6 @@ public class PlayerVoteStore {
                 return UpdateResult.duplicate(player);
             }
             player.name = preferName(player.name, playerName);
-            player.lastVoteAt = Math.max(player.lastVoteAt, rewardedAt);
             player.lastRewardAt = Math.max(player.lastRewardAt, rewardedAt);
             player.lastRewardDate = rewardDate;
             return UpdateResult.saved(player);

@@ -62,8 +62,10 @@ El reclamo con `/voto40` usa el protocolo v3 de 40ServidoresMC. La URL base est√
 
 1. `GET /api/vote/v3/pending?nick=...` con `Authorization: Bearer <api.key>`
 2. Si hay votos pendientes: se entrega el premio local y luego `POST /api/vote/v3/ack`
-3. Si no hay pendientes y `puede_votar_ya=true`: se muestra el enlace directo `https://www.40servidoresmc.es/{slug}/votar` (el `slug` viene en la respuesta pending).
+3. Si no hay pendientes y `puede_votar_ya=true`: se muestra el enlace directo (`servidor.url_votar` si viene, si no `/{slug}/votar`).
 4. Si no hay pendientes y `puede_votar_ya=false`: mensaje de ya recompensado con `siguiente_voto`
+
+Al entregar un pending, el cooldown local usa la `fecha` del voto web (no la hora del claim), para no bloquear el enlace cuando la web ya permite votar otra vez.
 
 Las estad√≠sticas (`/stats40`) siguen usando el endpoint legacy `api2.php?estadisticas=1` (no hay equivalente v3).
 

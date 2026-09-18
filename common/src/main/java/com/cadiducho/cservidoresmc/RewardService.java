@@ -11,7 +11,9 @@ import com.cadiducho.cservidoresmc.util.IpSanitizer;
 
 import java.io.File;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -19,6 +21,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
@@ -39,6 +42,7 @@ public class RewardService {
     private final Supplier<String> currentDate;
     private final Supplier<Long> clock;
     private final Set<String> pendingRechecks = new HashSet<>();
+    private final Set<String> deliveriesInFlight = ConcurrentHashMap.newKeySet();
 
     public RewardService(CSPlugin plugin) {
         this(plugin,
@@ -116,11 +120,13 @@ public class RewardService {
     }
 
     public boolean deliverReward(String player, CSCommandSender sender, boolean notifyDuplicate) {
-        return deliverReward(player, sender.getUniqueId(), PlayerReference.from(sender), notifyDuplicate, VoteTrace.noop()).ok;
+        return deliverReward(player, sender.getUniqueId(), PlayerReference.from(sender), notifyDuplicate,
+                clock.get(), VoteTrace.noop()).outcome == DeliveryOutcome.DELIVERED;
     }
 
     public boolean deliverReward(CSCommandSender sender, boolean notifyDuplicate) {
-        return deliverReward(sender.getName(), sender.getUniqueId(), PlayerReference.from(sender), notifyDuplicate, VoteTrace.noop()).ok;
+        return deliverReward(sender.getName(), sender.getUniqueId(), PlayerReference.from(sender), notifyDuplicate,
+                clock.get(), VoteTrace.noop()).outcome == DeliveryOutcome.DELIVERED;
     }
 
     public boolean hasPendingReward(String player) {
@@ -162,73 +168,92 @@ public class RewardService {
     }
 
     public void shutdown() {
+        deliveriesInFlight.clear();
     }
 
     private void deliverAndAck(String player, String uuid, PlayerReference reference,
                                List<PendingVote> votes, VoteTrace voteTrace) {
+        final String flightKey = normalizePlayer(player);
+        if (!deliveriesInFlight.add(flightKey)) {
+            voteTrace.branch("delivery_busy");
+            voteTrace.done();
+            return;
+        }
+
         List<Long> ids = new ArrayList<>();
         for (PendingVote vote : votes) {
             ids.add(vote.getId());
         }
+        final long votedAt = earliestVoteTimestamp(votes, clock.get());
 
         scheduler.runGlobal(() -> {
-            if (!plugin.isActive()) {
-                voteTrace.aborted("plugin_inactive");
-                return;
-            }
+            try {
+                if (!plugin.isActive()) {
+                    voteTrace.aborted("plugin_inactive");
+                    return;
+                }
 
-            boolean online = plugin.isPlayerOnline(player);
-            if (!online) {
-                voteTrace.delivery(false, 0, 0, false, "OFFLINE");
-                plugin.getApiClient().sendAck(ids, player, false, "", voteTrace)
+                boolean online = plugin.isPlayerOnline(player);
+                if (!online) {
+                    voteTrace.delivery(false, 0, 0, false, "OFFLINE");
+                    plugin.getApiClient().sendAck(ids, player, false, "", voteTrace)
+                            .whenComplete((ack, error) -> {
+                                if (error != null) {
+                                    voteTrace.error("ack_failed_after_offline: " + error.getMessage());
+                                }
+                                sendMessage(reference, messages().voteDeliveryFailed());
+                                voteTrace.done();
+                            });
+                    return;
+                }
+
+                DeliveryResult delivery = deliverReward(player, uuid, reference, true, votedAt, voteTrace);
+                String userIp = IpSanitizer.forAck(plugin.getPlayerIp(player));
+
+                if (delivery.outcome == DeliveryOutcome.SAVE_FAILED) {
+                    voteTrace.delivery(false, delivery.commandsOk, delivery.commandsTotal, true, delivery.markResult);
+                    plugin.getApiClient().sendAck(ids, player, false, userIp, voteTrace)
+                            .whenComplete((ack, error) -> {
+                                if (error != null) {
+                                    voteTrace.error("ack_failed_after_save_fail: " + error.getMessage());
+                                }
+                                sendMessage(reference, messages().voteDeliveryFailed());
+                                voteTrace.done();
+                            });
+                    return;
+                }
+
+                // NEW or DUPLICATE: local reward is already settled; always ack true.
+                if (delivery.commandsOk < delivery.commandsTotal) {
+                    plugin.log("[AutoReward] Algunos comandos fallaron para " + player + ": "
+                            + delivery.commandsOk + "/" + delivery.commandsTotal);
+                }
+                voteTrace.delivery(true, delivery.commandsOk, delivery.commandsTotal, true, delivery.markResult);
+                plugin.getApiClient().sendAck(ids, player, true, userIp, voteTrace)
                         .whenComplete((ack, error) -> {
-                            if (error != null) {
-                                voteTrace.error("ack_failed_after_offline: " + error.getMessage());
+                            if (error != null || ack == null) {
+                                plugin.getApiClient().addPendingAck(player, ids);
+                                if (delivery.outcome == DeliveryOutcome.DELIVERED) {
+                                    sendMessage(reference, messages().voteAckFailed());
+                                }
+                                voteTrace.done();
+                                return;
                             }
-                            sendMessage(reference, messages().voteDeliveryFailed());
                             voteTrace.done();
                         });
-                return;
+            } finally {
+                deliveriesInFlight.remove(flightKey);
             }
-
-            DeliveryResult delivery = deliverReward(player, uuid, reference, true, voteTrace);
-            boolean delivered = delivery.ok;
-            String userIp = IpSanitizer.forAck(plugin.getPlayerIp(player));
-
-            if (!delivered) {
-                voteTrace.delivery(false, delivery.commandsOk, delivery.commandsTotal, true, delivery.markResult);
-                plugin.getApiClient().sendAck(ids, player, false, userIp, voteTrace)
-                        .whenComplete((ack, error) -> {
-                            if (error != null) {
-                                voteTrace.error("ack_failed_after_delivery_fail: " + error.getMessage());
-                            }
-                            sendMessage(reference, messages().voteDeliveryFailed());
-                            voteTrace.done();
-                        });
-                return;
-            }
-
-            voteTrace.delivery(true, delivery.commandsOk, delivery.commandsTotal, true, delivery.markResult);
-            plugin.getApiClient().sendAck(ids, player, true, userIp, voteTrace)
-                    .whenComplete((ack, error) -> {
-                        if (error != null || ack == null) {
-                            plugin.getApiClient().addPendingAck(player, ids);
-                            sendMessage(reference, messages().voteAckFailed());
-                            voteTrace.done();
-                            return;
-                        }
-                        voteTrace.done();
-                    });
         });
     }
 
     private DeliveryResult deliverReward(String player, String uuid, PlayerReference reference,
-                                         boolean notifyDuplicate, VoteTrace voteTrace) {
+                                         boolean notifyDuplicate, long votedAt, VoteTrace voteTrace) {
         String date = currentDate.get();
         PlayerVoteStore.MarkResult markResult = playerVoteStore.markRewarded(player, uuid, date, clock.get());
         if (markResult == PlayerVoteStore.MarkResult.FAILED) {
             sendMessage(reference, messages().rewardSaveFailed());
-            return DeliveryResult.failed("FAILED", 0, 0);
+            return DeliveryResult.saveFailed();
         }
 
         if (markResult == PlayerVoteStore.MarkResult.DUPLICATE) {
@@ -237,10 +262,10 @@ public class RewardService {
             if (notifyDuplicate) {
                 sendAlreadyRewardedMessage(player, uuid, reference);
             }
-            return DeliveryResult.failed("DUPLICATE", 0, 0);
+            return DeliveryResult.alreadyDelivered();
         }
 
-        recordVote(player, uuid);
+        recordVote(player, uuid, votedAt);
         recordStreak(player, uuid);
         plugin.getApiClient().invalidateServerStatsCache();
         sendMessage(reference, messages().voteClaim());
@@ -263,8 +288,7 @@ public class RewardService {
         }
 
         debug("Premio entregado a " + player + ".");
-        boolean allOk = commands.isEmpty() || ok == commands.size();
-        return new DeliveryResult(allOk, "NEW", ok, commands.size());
+        return DeliveryResult.delivered(ok, commands.size());
     }
 
     private void scheduleAutoReward(String player, PlayerReference reference, VoteTrace parentTrace) {
@@ -350,12 +374,12 @@ public class RewardService {
         }
     }
 
-    private void recordVote(String player, String uuid) {
-        long votedAt = clock.get();
-        playerVoteStore.recordVote(player, uuid, votedAt);
+    private void recordVote(String player, String uuid, long votedAt) {
+        long at = votedAt > 0L ? votedAt : clock.get();
+        playerVoteStore.recordVote(player, uuid, at);
         VoteReminderService voteReminderService = plugin.getVoteReminderService();
         if (voteReminderService != null) {
-            voteReminderService.recordVote(player, uuid, votedAt);
+            voteReminderService.recordVote(player, uuid, at);
         }
     }
 
@@ -413,27 +437,25 @@ public class RewardService {
         if (siguienteVoto == null || siguienteVoto.trim().isEmpty()) {
             return VoteTimeFormatter.formatDuration(0L);
         }
-        try {
-            long target = OffsetDateTime.parse(siguienteVoto.trim()).toInstant().toEpochMilli();
-            long remaining = Math.max(0L, target - clock.get());
-            return VoteTimeFormatter.formatDuration(remaining);
-        } catch (DateTimeParseException ignored) {
-            try {
-                long target = Instant.parse(siguienteVoto.trim()).toEpochMilli();
-                long remaining = Math.max(0L, target - clock.get());
-                return VoteTimeFormatter.formatDuration(remaining);
-            } catch (DateTimeParseException ignoredAgain) {
-                return siguienteVoto;
-            }
+        Long target = parseTimestampMillis(siguienteVoto.trim());
+        if (target == null) {
+            return siguienteVoto;
         }
+        long remaining = Math.max(0L, target - clock.get());
+        return VoteTimeFormatter.formatDuration(remaining);
     }
 
     /**
-     * Direct vote page for this server when the pending payload includes a slug.
+     * Prefer API {@code url_votar}, then {@code /{slug}/votar}, then site home.
      */
     static String voteUrlFor(PendingVotesResponse pending) {
         if (pending != null && pending.getServidor() != null) {
-            String slug = pending.getServidor().getSlug();
+            PendingVotesResponse.ServerInfo server = pending.getServidor();
+            String urlVotar = server.getUrlVotar();
+            if (urlVotar != null && !urlVotar.trim().isEmpty()) {
+                return urlVotar.trim();
+            }
+            String slug = server.getSlug();
             if (slug != null && !slug.trim().isEmpty()) {
                 return SITE_BASE + "/" + slug.trim() + "/votar";
             }
@@ -441,12 +463,68 @@ public class RewardService {
         return VOTE_URL;
     }
 
+    static long earliestVoteTimestamp(List<PendingVote> votes, long fallback) {
+        long earliest = Long.MAX_VALUE;
+        if (votes != null) {
+            for (PendingVote vote : votes) {
+                Long parsed = voteTimestampMillis(vote);
+                if (parsed != null && parsed < earliest) {
+                    earliest = parsed;
+                }
+            }
+        }
+        return earliest == Long.MAX_VALUE ? fallback : earliest;
+    }
+
+    static Long voteTimestampMillis(PendingVote vote) {
+        if (vote == null) {
+            return null;
+        }
+        Long fromFecha = parseTimestampMillis(vote.getFecha());
+        if (fromFecha != null) {
+            return fromFecha;
+        }
+        return parseUtcDayStartMillis(vote.getDia());
+    }
+
+    static Long parseTimestampMillis(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return null;
+        }
+        String value = raw.trim();
+        try {
+            return OffsetDateTime.parse(value).toInstant().toEpochMilli();
+        } catch (DateTimeParseException ignored) {
+            try {
+                return Instant.parse(value).toEpochMilli();
+            } catch (DateTimeParseException ignoredAgain) {
+                return null;
+            }
+        }
+    }
+
+    static Long parseUtcDayStartMillis(String day) {
+        if (day == null || day.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            LocalDate date = LocalDate.parse(day.trim());
+            return date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli();
+        } catch (DateTimeParseException ignored) {
+            return null;
+        }
+    }
+
     private PluginMessages messages() {
         return plugin.getPluginMessages();
     }
 
     private String rewardKey(String player, String date) {
-        return date + "." + (player == null ? "" : player).toLowerCase(Locale.ROOT);
+        return date + "." + normalizePlayer(player);
+    }
+
+    private static String normalizePlayer(String player) {
+        return (player == null ? "" : player).toLowerCase(Locale.ROOT);
     }
 
     private static File dataFolder(File dataPath) {
@@ -479,21 +557,35 @@ public class RewardService {
         plugin.runPlayerIfActive(reference, sender -> sender.sendMessageWithTag(message));
     }
 
+    enum DeliveryOutcome {
+        DELIVERED,
+        ALREADY_DELIVERED,
+        SAVE_FAILED
+    }
+
     private static final class DeliveryResult {
-        private final boolean ok;
+        private final DeliveryOutcome outcome;
         private final String markResult;
         private final int commandsOk;
         private final int commandsTotal;
 
-        private DeliveryResult(boolean ok, String markResult, int commandsOk, int commandsTotal) {
-            this.ok = ok;
+        private DeliveryResult(DeliveryOutcome outcome, String markResult, int commandsOk, int commandsTotal) {
+            this.outcome = outcome;
             this.markResult = markResult;
             this.commandsOk = commandsOk;
             this.commandsTotal = commandsTotal;
         }
 
-        private static DeliveryResult failed(String markResult, int commandsOk, int commandsTotal) {
-            return new DeliveryResult(false, markResult, commandsOk, commandsTotal);
+        private static DeliveryResult delivered(int commandsOk, int commandsTotal) {
+            return new DeliveryResult(DeliveryOutcome.DELIVERED, "NEW", commandsOk, commandsTotal);
+        }
+
+        private static DeliveryResult alreadyDelivered() {
+            return new DeliveryResult(DeliveryOutcome.ALREADY_DELIVERED, "DUPLICATE", 0, 0);
+        }
+
+        private static DeliveryResult saveFailed() {
+            return new DeliveryResult(DeliveryOutcome.SAVE_FAILED, "FAILED", 0, 0);
         }
     }
 }
